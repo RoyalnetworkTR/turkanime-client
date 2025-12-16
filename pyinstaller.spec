@@ -13,8 +13,8 @@ a = Analysis([
              pathex=[],
              binaries=[],
              datas=[
-                 ('docs/Turkanime.ico', 'docs'),
-                 ('docs/Turkanime.png', 'docs'),
+                 ('docs/TurkAnime.ico', 'docs'),
+                 ('docs/TurkAnime.png', 'docs'),
                  ('gereksinimler.json', '.'),
              ] + bin_data,
              hiddenimports=hiddenimports,

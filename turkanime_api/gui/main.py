@@ -617,7 +617,7 @@ def _resource_path(rel_path: str) -> str:
     """PyInstaller tek-dosya ve geliştirme ortamında kaynak yolu çözer.
 
     - Çalışma zamanı (_MEIPASS) içinde: docs klasörü Analysis.datas ile köke kopyalanır.
-      boot.py ve spec, docs/Turkanime.ico'yu datas'a ekliyor; bu yüzden _MEIPASS/docs/... bekleriz.
+      boot.py ve spec, docs/TurkAnime.ico'yu datas'a ekliyor; bu yüzden _MEIPASS/docs/... bekleriz.
     - Geliştirme sırasında: proje kökü altındaki göreli yol kullanılır.
     """
     try:

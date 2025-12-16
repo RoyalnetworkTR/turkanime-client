@@ -22,10 +22,10 @@ packages = [
 ]
 
 include = [
-    { path = "docs/Turkanime.png", format = "sdist" },
-    { path = "docs/Turkanime.ico", format = "sdist" },
-    { path = "docs/Turkanime.png", format = "wheel" },
-    { path = "docs/Turkanime.ico", format = "wheel" },
+    { path = "docs/TurkAnime.png", format = "sdist" },
+    { path = "docs/TurkAnime.ico", format = "sdist" },
+    { path = "docs/TurkAnime.png", format = "wheel" },
+    { path = "docs/TurkAnime.ico", format = "wheel" },
 ]
 
 [tool.poetry.dependencies]

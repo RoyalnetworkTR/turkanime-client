@@ -2,6 +2,7 @@
 """
 turkanime_api için ortak yardımcı fonksiyonlar.
 """
+import os
 import platform
 import re
 import subprocess as sp
@@ -10,6 +11,9 @@ import sysconfig
 import sys
 from typing import Optional, Dict, Any
 from yt_dlp import YoutubeDL
+
+# bin/ klasörü yolu (mpv, aria2c, ffmpeg vb. içerir)
+BIN_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "bin")
 
 def get_platform() -> str:
     """Return a string with current platform (system and machine architecture).

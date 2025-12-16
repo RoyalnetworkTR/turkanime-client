@@ -221,6 +221,10 @@ def menu_loop():
                             break
                         print("  Video başlatılacak..")
                         proc = best_video.oynat(dakika_hatirla=dosya.ayarlar["dakika hatirla"])
+                        if proc is None:
+                            print("  Video oynatıcı başlatılamadı!")
+                            best_video.is_working = False
+                            continue
                         if proc.returncode == 0:
                             success = True
                             break

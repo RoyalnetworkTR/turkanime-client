@@ -123,6 +123,54 @@ class AdapterVideo:
             return self.player
         return default
 
+    def oynat(self, dakika_hatirla: bool = False):
+        """Videoyu mpv ile oynat."""
+        import shutil
+        from ..common.utils import BIN_PATH
+        from os.path import join, exists
+        
+        # Önce bin/ klasöründeki mpv'yi dene, sonra sistem PATH'ini
+        mpv_path = join(BIN_PATH, "mpv.exe")
+        if not exists(mpv_path):
+            # Sistem PATH'inde mpv ara
+            mpv_path = shutil.which("mpv")
+            if not mpv_path:
+                print("MPV bulunamadı! Lütfen mpv'yi yükleyin veya bin/ klasörüne koyun.")
+                return None
+        
+        cmd = [mpv_path, self.url]
+        
+        # User-agent ekle (HLS için gerekli olabilir)
+        cmd.extend(["--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"])
+        
+        # Dakika hatırlama özelliği
+        if dakika_hatirla:
+            cmd.append("--save-position-on-quit")
+        
+        try:
+            proc = sp.Popen(cmd)
+            proc.wait()  # İşlemin bitmesini bekle
+            return proc
+        except OSError as e:
+            # Binary uyumsuz olabilir, sistem mpv'yi dene
+            if e.winerror == 216:  # WinError 216: Uyumsuz binary
+                print("bin/mpv.exe uyumsuz, sistem mpv deneniyor...")
+                sys_mpv = shutil.which("mpv")
+                if sys_mpv:
+                    cmd[0] = sys_mpv
+                    try:
+                        proc = sp.Popen(cmd)
+                        proc.wait()
+                        return proc
+                    except Exception as e2:
+                        print(f"Sistem MPV hatası: {e2}")
+                        return None
+            print(f"MPV başlatma hatası: {e}")
+            return None
+        except Exception as e:
+            print(f"MPV başlatma hatası: {e}")
+            return None
+
     @property
     def resolution(self) -> int:
         if self._resolution is None:

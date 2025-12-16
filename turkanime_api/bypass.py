@@ -32,16 +32,58 @@ def fetch(path, headers={}):
     # Init: Çerezleri cart curt oluştur, yeni domain geldiyse yönlendir.
     if session is None:
         session = requests.Session(impersonate="firefox", allow_redirects=True)
-        res = session.get(BASE_URL)
-        assert res.status_code == 200, ConnectionError
-        BASE_URL = res.url
-        BASE_URL = BASE_URL[:-1] if BASE_URL.endswith('/') else BASE_URL
+        try:
+            res = session.get(BASE_URL)
+            if res.status_code != 200:
+                raise ConnectionError(f"Status: {res.status_code}")
+            BASE_URL = res.url
+            BASE_URL = BASE_URL[:-1] if BASE_URL.endswith('/') else BASE_URL
+        except Exception as e:
+            # CF engeli - cf_bypass ile dene
+            print(f"[TurkAnime] curl_cffi başarısız ({e}), CF bypass deneniyor...")
+            cf_session = _get_cf_session()
+            if cf_session is not None:
+                try:
+                    res = cf_session.get(BASE_URL)
+                    if res.status_code == 200:
+                        BASE_URL = res.url if hasattr(res, 'url') else BASE_URL
+                        BASE_URL = BASE_URL[:-1] if BASE_URL.endswith('/') else BASE_URL
+                        # Session çerezlerini aktar
+                        for name, value in cf_session.cookies.items():
+                            session.cookies.set(name, value)
+                        print(f"[TurkAnime] CF bypass başarılı ({cf_session.last_method})")
+                except CFBypassError:
+                    raise ConnectionError("Tüm CF bypass yöntemleri başarısız")
+            else:
+                raise ConnectionError("CF bypass modülü mevcut değil")
+    
     if path is None:
         return ""
     # Get request'i yolla
     path = path if path.startswith("/") else "/" + path
     headers["X-Requested-With"] = "XMLHttpRequest"
-    return session.get(BASE_URL + path, headers=headers).text
+    
+    try:
+        resp = session.get(BASE_URL + path, headers=headers)
+        if resp.status_code == 403:
+            # CF engeli - fallback dene
+            cf_session = _get_cf_session()
+            if cf_session is not None:
+                resp = cf_session.get(BASE_URL + path, headers=headers)
+                if resp.status_code == 200:
+                    return resp.text
+            raise ConnectionError("Cloudflare engeli aşılamadı")
+        return resp.text
+    except Exception as e:
+        # Hata durumunda CF bypass ile tekrar dene
+        cf_session = _get_cf_session()
+        if cf_session is not None:
+            try:
+                resp = cf_session.get(BASE_URL + path, headers=headers)
+                return resp.text
+            except CFBypassError:
+                pass
+        raise
 
 
 """

@@ -3,6 +3,8 @@
 Bu modül, AnimeciX API uçlarından arama ve bölüm/izleme verilerini çeker.
 Mevcut `objects.Anime/Bolum/Video` yapısına dokunmamak için, yalnızca
 harici arama/episode/watch listesi sağlar; indirme/oynatma yine yt-dlp/mpv ile.
+
+Cloudflare koruması için cf_bypass modülü entegre edilmiştir.
 """
 from __future__ import annotations
 
@@ -14,19 +16,49 @@ from urllib.parse import urlparse, parse_qs, quote, urlsplit, urlunsplit
 
 import urllib.request
 
+# Cloudflare bypass entegrasyonu
+try:
+    from ..common.cf_bypass import CFSession, CFBypassError
+    HAS_CF_BYPASS = True
+except ImportError:
+    HAS_CF_BYPASS = False
+
 
 BASE_URL = "https://animecix.tv/"
 ALT_URL = "https://mangacix.net/"
 HEADERS = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
 VIDEO_PLAYERS = ["tau-video.xyz", "sibnet"]
 
+# Global CF session (lazy-load)
+_cf_session: Optional[CFSession] = None
+
+
+def _get_cf_session() -> Optional[CFSession]:
+    """CF session'ı lazy-load et."""
+    global _cf_session
+    if _cf_session is None and HAS_CF_BYPASS:
+        _cf_session = CFSession(impersonate="chrome110", timeout=15, max_retries=3)
+    return _cf_session
+
 
 def _http_get(url: str, timeout: int = 10) -> bytes:
+    """HTTP GET isteği - önce CF bypass, sonra fallback urllib."""
     # Non-ASCII pathleri ASCII'ye uygun hale getirmek için yüzde-encode et
     sp = urlsplit(url)
     safe_path = quote(sp.path, safe="/:%@")
-    # Query kısmı zaten ASCII ise aynen kullan; aksi durumda çağıran taraf urlencode etmelidir
     safe_url = urlunsplit((sp.scheme, sp.netloc, safe_path, sp.query, sp.fragment))
+    
+    # Önce CF bypass ile dene
+    cf_session = _get_cf_session()
+    if cf_session is not None:
+        try:
+            resp = cf_session.get(safe_url, headers=HEADERS)
+            if resp.status_code == 200:
+                return resp.content
+        except (CFBypassError, Exception) as e:
+            print(f"[AnimeCix] CF bypass başarısız, fallback kullanılıyor: {e}")
+    
+    # Fallback: Normal urllib
     req = urllib.request.Request(safe_url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()

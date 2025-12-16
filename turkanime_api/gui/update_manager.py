@@ -31,8 +31,8 @@ class UpdateManager:
         self.current_version = current_version
         self.dosyalar = dosyalar or Dosyalar()
         self.version_url = (
-            "https://github.com/barkeser2002/turkanime-gui/"
-            "releases/latest/download/version.json"
+            "https://raw.githubusercontent.com/barkeser2002/"
+            "turkanime-gui/main/docs/version.json"
         )
         self.platform = get_platform()
         self.arch = get_arch()
@@ -64,12 +64,11 @@ class UpdateManager:
             return False, None
 
     def _is_newer_version(self, latest_version, current_version, version_data=None):
-        """Versiyon karşılaştırması yap. Release date'yi de kontrol et."""
+        """Versiyon karşılaştırması yap."""
         try:
             latest_parts = [int(x) for x in latest_version.split('.')]
             current_parts = [int(x) for x in current_version.split('.')]
 
-            version_different = False
             for i in range(max(len(latest_parts), len(current_parts))):
                 latest_num = latest_parts[i] if i < len(latest_parts) else 0
                 current_num = current_parts[i] if i < len(current_parts) else 0
@@ -79,25 +78,9 @@ class UpdateManager:
                 elif latest_num < current_num:
                     return False
 
-            # Versiyonlar aynıysa, release_date'yi kontrol et
-            if version_data and latest_version == current_version:
-                # Eğer release_date varsa ve versiyon aynıysa, güncelleme var kabul et
-                release_date = version_data.get("release_date")
-                if release_date:
-                    try:
-                        from datetime import datetime
-                        # Release date'yi parse et
-                        latest_date = datetime.fromisoformat(
-                            release_date.replace('Z', '+00:00')
-                            if release_date.endswith('Z') else release_date
-                        )
-                        # Eğer release date geçerliyse ve versiyon aynıysa güncelleme var
-                        return True
-                    except:
-                        pass
-
+            # Versiyonlar tamamen aynıysa güncelleme yok
             return False
-        except:
+        except Exception:
             return False
 
     def _show_update_dialog(self, version_data):

@@ -3139,11 +3139,11 @@ class MainWindow(ctk.CTk):
             return
 
         # Sadece bölümler için kullanılacak kaynakları ayır (AniList hariç)
-        display_sources = {k: v for k, v in self.all_episodes.items() if k in ["TürkAnime", "AnimeciX"]}
+        display_sources = {k: v for k, v in self.all_episodes.items() if k in ["TürkAnime", "AnimeciX", "Anizle"]}
 
         # Kaynak durumlarını kontrol et ve kullanıcıya bildir
         loaded_sources = [k for k, v in display_sources.items() if v and len(v) > 0]
-        failed_sources = [k for k in ["TürkAnime", "AnimeciX"] if k not in display_sources or not display_sources.get(k)]
+        failed_sources = [k for k in ["TürkAnime", "AnimeciX", "Anizle"] if k not in display_sources or not display_sources.get(k)]
 
         if loaded_sources:
             status_msg = f"✅ {len(loaded_sources)} kaynak yüklendi: {', '.join(loaded_sources)}"

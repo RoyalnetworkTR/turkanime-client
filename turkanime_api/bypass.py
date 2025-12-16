@@ -23,7 +23,7 @@ from Crypto.Cipher import AES
 from curl_cffi import requests
 
 session = None
-BASE_URL = "https://turkanime.co/"
+BASE_URL = "https://turkanime.tv/"
 
 def fetch(path, headers={}):
     """Curl-cffi kullanarak HTTP/3 ve Firefox TLS Fingerprint Impersonation
@@ -33,7 +33,7 @@ def fetch(path, headers={}):
     if session is None:
         session = requests.Session(impersonate="firefox", allow_redirects=True)
         try:
-            res = session.get(BASE_URL)
+            res = session.get(BASE_URL + "/")
             if res.status_code != 200:
                 raise ConnectionError(f"Status: {res.status_code}")
             BASE_URL = res.url

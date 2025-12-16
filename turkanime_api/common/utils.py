@@ -13,7 +13,17 @@ from typing import Optional, Dict, Any
 from yt_dlp import YoutubeDL
 
 # bin/ klasörü yolu (mpv, aria2c, ffmpeg vb. içerir)
-BIN_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "bin")
+# PyInstaller ile paketlendiğinde _MEIPASS kullanılır
+if getattr(sys, 'frozen', False):
+    # EXE olarak çalışıyor
+    _BASE_PATH = sys._MEIPASS if hasattr(sys, '_MEIPASS') else os.path.dirname(sys.executable)
+    BIN_PATH = os.path.join(_BASE_PATH, "bin")
+    # Eğer _MEIPASS/bin yoksa, exe yanındaki bin klasörünü dene
+    if not os.path.exists(BIN_PATH):
+        BIN_PATH = os.path.join(os.path.dirname(sys.executable), "bin")
+else:
+    # Kaynak koddan çalışıyor
+    BIN_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "bin")
 
 def get_platform() -> str:
     """Return a string with current platform (system and machine architecture).

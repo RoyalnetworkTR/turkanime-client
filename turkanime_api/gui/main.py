@@ -2903,7 +2903,8 @@ class MainWindow(ctk.CTk):
                                     eps = anizle_anime.episodes
                                     episodes = []
                                     ada = AdapterAnime(slug=anizle_anime.slug, title=anizle_anime.title)
-                                    stream_provider = lambda slug, _timeout=10: get_episode_streams(slug, timeout=_timeout)
+                                    # stream_provider sadece url parametresi almalı
+                                    stream_provider = lambda url: get_episode_streams(url, timeout=10)
                                     for e in eps:
                                         ab = AdapterBolum(
                                             url=e.url, 

@@ -336,14 +336,18 @@ def _fetch_all_episodes_from_page(slug: str, timeout: int = 60) -> List[Tuple[st
         # veya: <a href="/episode-slug">Episode Title</a>
         
         episodes: List[Tuple[int, str, str]] = []
+        seen_episode_nums: set = set()  # Bölüm numarasına göre duplikasyon kontrolü
         
         # Pattern 1: data-order ile
         pattern1 = r'href="/?([^"]+?-bolum[^"]*)"[^>]*data-order="(\d+)"[^>]*>([^<]+)'
         matches1 = re.findall(pattern1, html, re.IGNORECASE)
         for ep_slug, order, title in matches1:
+            ep_slug_clean = ep_slug.strip('/')
             try:
                 order_num = int(order)
-                episodes.append((order_num, ep_slug.strip('/'), title.strip()))
+                if order_num not in seen_episode_nums:
+                    seen_episode_nums.add(order_num)
+                    episodes.append((order_num, ep_slug_clean, title.strip()))
             except ValueError:
                 pass
         
@@ -351,13 +355,15 @@ def _fetch_all_episodes_from_page(slug: str, timeout: int = 60) -> List[Tuple[st
         pattern2 = r'href="/?([^"]+?-(\d+)-bolum[^"]*)"[^>]*>([^<]*)'
         matches2 = re.findall(pattern2, html, re.IGNORECASE)
         for ep_slug, ep_num, title in matches2:
-            if not any(ep_slug.strip('/') == e[1] for e in episodes):
-                try:
-                    order_num = int(ep_num)
+            ep_slug_clean = ep_slug.strip('/')
+            try:
+                order_num = int(ep_num)
+                if order_num not in seen_episode_nums:
+                    seen_episode_nums.add(order_num)
                     final_title = title.strip() if title.strip() else f"{ep_num}. Bölüm"
-                    episodes.append((order_num, ep_slug.strip('/'), final_title))
-                except ValueError:
-                    pass
+                    episodes.append((order_num, ep_slug_clean, final_title))
+            except ValueError:
+                pass
         
         if not episodes:
             return _get_episodes_remote(slug, timeout)
@@ -804,12 +810,16 @@ class AnizleAnime:
 
     @property
     def episodes(self) -> List[AnizleEpisode]:
-        """Animenin bölümlerini getir."""
+        """Animenin bölümlerini getir (duplikasyonlar filtrelenir)."""
         eps: List[AnizleEpisode] = []
+        seen_urls: set = set()  # Duplikasyon kontrolü
         episodes_data = get_anime_episodes(self.slug)
         if episodes_data:
             for slug, label in episodes_data:
-                eps.append(AnizleEpisode(title=label, url=slug))
+                # URL bazlı duplikasyon kontrolü
+                if slug not in seen_urls:
+                    seen_urls.add(slug)
+                    eps.append(AnizleEpisode(title=label, url=slug))
         return eps
 
     @property

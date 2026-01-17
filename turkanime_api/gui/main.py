@@ -41,7 +41,7 @@ from turkanime_api.sources.adapter import AdapterAnime, AdapterBolum
 from turkanime_api.anilist_client import anilist_client, AniListAuthServer
 from turkanime_api.gui.update_manager import UpdateManager
 from turkanime_api.common.utils import get_platform, get_arch
-from turkanime_api.common.ui_helpers import create_progress_section
+from turkanime_api.common.ui_helpers import create_progress_section, CTkToolTip
 from turkanime_api.common.db import APIManager
 from turkanime_api.common.adapters import SearchEngine
 
@@ -1121,6 +1121,7 @@ class MainWindow(ctk.CTk):
                                        fg_color="#333333", hover_color="#444444",
                                        corner_radius=8)
         self.btnSettings.pack(side="right", padx=(5, 0))
+        CTkToolTip(self.btnSettings, "Ayarlar")
 
         # AniList butonları
         self.anilist_panel = ctk.CTkFrame(user_frame, fg_color="transparent")
@@ -5201,10 +5202,12 @@ class MainWindow(ctk.CTk):
             btnPlay = ctk.CTkButton(actions, text="▶️", width=40, height=32,
                                   command=lambda obj=episode['obj']: self._play_episode(obj))
             btnPlay.pack(side="left", padx=(0, 5))
+            CTkToolTip(btnPlay, "Oynat")
             
             btnDl = ctk.CTkButton(actions, text="⬇️", width=40, height=32,
                                 command=lambda obj=episode['obj']: self._download_episode(obj))
             btnDl.pack(side="left")
+            CTkToolTip(btnDl, "İndir")
             
             self.episodes_vars.append((var, episode['obj']))
             self.episodes_objs.append(episode['obj'])

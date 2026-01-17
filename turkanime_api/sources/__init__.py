@@ -1,4 +1,4 @@
-"""Kaynaklar (TürkAnime, AnimeciX, Anizle) için facade.
+"""Kaynaklar (TürkAnime, AnimeciX, Anizle, Animely, TRAnimeİzle) için facade.
 
 Ek sağlayıcılar bu modülden dışa aktarılır ve `register_provider`
 yardımıyla sisteme kaydedilebilir.
@@ -6,6 +6,14 @@ yardımıyla sisteme kaydedilebilir.
 
 from .animecix import CixAnime, search_animecix  # noqa: F401
 from .anizle import AnizleAnime, search_anizle  # noqa: F401
+from .animely import AnimelyAnime, search_animely, get_anime_episodes as get_animely_episodes  # noqa: F401
+from .tranime import (  # noqa: F401
+    TRAnimeAnime, TRAnimeEpisode, TRAnimeVideo,
+    search_tranime, get_anime_by_slug as get_tranime_anime,
+    get_anime_episodes as get_tranime_episodes,
+    get_episode_details as get_tranime_episode_details,
+    set_session_cookie as set_tranime_cookie
+)
 
 # Mevcut sağlayıcılar
 PROVIDERS = {
@@ -20,6 +28,18 @@ PROVIDERS = {
         "adapter": None,
         "enabled": True,
         "priority": 2
+    },
+    "animely": {
+        "name": "Animely",
+        "adapter": None,
+        "enabled": True,
+        "priority": 3
+    },
+    "tranime": {
+        "name": "TRAnimeİzle",
+        "adapter": None,
+        "enabled": True,
+        "priority": 4
     }
 }
 

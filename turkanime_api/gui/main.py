@@ -29,6 +29,14 @@ from turkanime_api.cli.cli_tools import VidSearchCLI, indir_aria2c
 from turkanime_api.cli.gereksinimler import Gereksinimler
 from turkanime_api.sources.animecix import CixAnime, search_animecix
 from turkanime_api.sources.anizle import AnizleAnime, search_anizle, get_episode_streams
+from turkanime_api.sources.animely import search_animely, get_anime_episodes as get_animely_episodes, AnimelyAnime
+from turkanime_api.sources.tranime import (
+    TRAnimeAnime, TRAnimeEpisode, search_tranime, 
+    get_anime_by_slug as get_tranime_anime,
+    get_anime_episodes as get_tranime_episodes,
+    get_episode_details as get_tranime_episode_details,
+    set_session_cookie as set_tranime_cookie
+)
 from turkanime_api.sources.adapter import AdapterAnime, AdapterBolum
 from turkanime_api.anilist_client import anilist_client, AniListAuthServer
 from turkanime_api.gui.update_manager import UpdateManager
@@ -36,6 +44,18 @@ from turkanime_api.common.utils import get_platform, get_arch
 from turkanime_api.common.ui_helpers import create_progress_section
 from turkanime_api.common.db import APIManager
 from turkanime_api.common.adapters import SearchEngine
+
+# Jikan API (MyAnimeList) importları
+try:
+    from turkanime_api.jikan_client import jikan_client, get_seasonal_anime_list, get_trending_anime_list, JIKAN_AVAILABLE
+except ImportError:
+    JIKAN_AVAILABLE = False
+
+try:
+    from turkanime_api.title_matching import get_title_matching_client, get_user_tracking_client
+    TITLE_MATCHING_AVAILABLE = True
+except ImportError:
+    TITLE_MATCHING_AVAILABLE = False
 
 # SearchEngine instance oluştur
 search_engine = SearchEngine()
@@ -736,6 +756,18 @@ class MainWindow(ctk.CTk):
 
     def _create_requirements_and_updates(self):
         """Gereksinimler ve güncellemeleri thread ile başlat."""
+        # TRAnimeİzle cookie'yi ayarlardan yükle
+        try:
+            dosya = Dosyalar()
+            tranime_cookie = dosya.ayarlar.get("tranime_cookie", "")
+            if tranime_cookie:
+                set_tranime_cookie(tranime_cookie)
+                with open("debug.log", "a") as f:
+                    f.write("INFO: TRAnimeİzle cookie yüklendi\n")
+        except Exception as e:
+            with open("debug.log", "a") as f:
+                f.write(f"ERROR: TRAnimeİzle cookie yükleme hatası: {e}\n")
+        
         # Gereksinimler kontrolü - thread ile
         def init_requirements():
             try:
@@ -982,147 +1014,277 @@ class MainWindow(ctk.CTk):
 
     def create_header(self):
         """Modern header oluştur."""
-        header_frame = ctk.CTkFrame(self.main_container, fg_color="#1a1a1a", height=70)
+        header_frame = ctk.CTkFrame(self.main_container, fg_color="#1a1a1a", height=60)
         header_frame.pack(fill="x", padx=0, pady=0)
         header_frame.pack_propagate(False)
 
         # Logo ve başlık
         logo_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        logo_frame.pack(side="left", padx=8, pady=8)
+        logo_frame.pack(side="left", padx=12, pady=8)
 
         # Logo ikonu
         try:
             icon_path = _resource_path(os.path.join('docs', 'Turkanime.png'))
             if os.path.exists(icon_path):
-                logo_image = ctk.CTkImage(Image.open(icon_path), size=(28, 28))
+                logo_image = ctk.CTkImage(Image.open(icon_path), size=(32, 32))
                 logo_label = ctk.CTkLabel(logo_frame, image=logo_image, text="")
-                logo_label.pack(side="left", padx=(0, 8))
+                logo_label.pack(side="left", padx=(0, 10))
         except Exception:
             pass
 
         # Başlık
         title_label = ctk.CTkLabel(logo_frame, text="TürkAnime",
-                                 font=ctk.CTkFont(size=20, weight="bold"),
+                                 font=ctk.CTkFont(size=22, weight="bold"),
                                  text_color="#ff6b6b")
         title_label.pack(side="left")
 
-        subtitle = ctk.CTkLabel(logo_frame, text="Anime Keşif Platformu",
-                              font=ctk.CTkFont(size=8),
-                              text_color="#888888")
-        subtitle.pack(side="left", padx=(6, 0))
+        # Ana navigasyon - pill style
+        nav_frame = ctk.CTkFrame(header_frame, fg_color="#0f0f0f", corner_radius=20)
+        nav_frame.pack(side="left", padx=20, pady=10)
 
-        # Ana navigasyon
-        nav_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        nav_frame.pack(side="left", padx=8)
-
-        self.btnHome = ctk.CTkButton(nav_frame, text="Ana Sayfa", command=self.show_home,
+        self.btnHome = ctk.CTkButton(nav_frame, text="🏠 Ana Sayfa", command=self.show_home,
                                    fg_color="transparent", text_color="#ffffff",
-                                   font=ctk.CTkFont(size=9, weight="bold"))
-        self.btnHome.pack(side="left", padx=1)
+                                   font=ctk.CTkFont(size=11, weight="bold"),
+                                   hover_color="#333333", corner_radius=15,
+                                   width=90, height=30)
+        self.btnHome.pack(side="left", padx=3, pady=3)
 
-        self.btnTrending = ctk.CTkButton(nav_frame, text="Trend", command=self.show_trending,
+        self.btnSeason = ctk.CTkButton(nav_frame, text="📺 Bu Sezon", command=self.show_season,
+                                      fg_color="transparent", text_color="#cccccc",
+                                      font=ctk.CTkFont(size=11),
+                                      hover_color="#333333", corner_radius=15,
+                                      width=90, height=30)
+        self.btnSeason.pack(side="left", padx=3, pady=3)
+
+        self.btnTrending = ctk.CTkButton(nav_frame, text="🔥 Trend", command=self.show_trending,
                                        fg_color="transparent", text_color="#cccccc",
-                                       font=ctk.CTkFont(size=9))
-        self.btnTrending.pack(side="left", padx=1)
+                                       font=ctk.CTkFont(size=11),
+                                       hover_color="#333333", corner_radius=15,
+                                       width=70, height=30)
+        self.btnTrending.pack(side="left", padx=3, pady=3)
 
-        self.btnDownloads = ctk.CTkButton(nav_frame, text="İndirilenler", command=self.show_downloads,
+        self.btnDownloads = ctk.CTkButton(nav_frame, text="⬇️ İndirilenler", command=self.show_downloads,
                                         fg_color="transparent", text_color="#cccccc",
-                                        font=ctk.CTkFont(size=9))
-        self.btnDownloads.pack(side="left", padx=1)
+                                        font=ctk.CTkFont(size=11),
+                                        hover_color="#333333", corner_radius=15,
+                                        width=100, height=30)
+        self.btnDownloads.pack(side="left", padx=3, pady=3)
 
         # Listem butonu - sadece giriş yapıldıysa göster
-        self.btnWatchlist = ctk.CTkButton(nav_frame, text="Listem", command=self.show_watchlist,
+        self.btnWatchlist = ctk.CTkButton(nav_frame, text="📋 Listem", command=self.show_watchlist,
                                         fg_color="transparent", text_color="#cccccc",
-                                        font=ctk.CTkFont(size=9))
+                                        font=ctk.CTkFont(size=11),
+                                        hover_color="#333333", corner_radius=15,
+                                        width=80, height=30)
         # Başlangıçta gizli, check_anilist_auth_status'te kontrol edilecek
 
-        # Arama çubuğu
+        # Arama çubuğu - daha kompakt
         search_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        search_frame.pack(side="left", padx=6, expand=True)
+        search_frame.pack(side="left", padx=10, expand=True)
 
-        # Kaynak seçimi
-        source_frame = ctk.CTkFrame(search_frame, fg_color="transparent")
-        source_frame.pack(side="left", padx=(0, 8))
+        # Kaynak ve başlık seçimi birleşik frame
+        selectors_frame = ctk.CTkFrame(search_frame, fg_color="transparent")
+        selectors_frame.pack(side="left", padx=(0, 10))
 
-        source_label = ctk.CTkLabel(source_frame, text="Kaynak:",
-                                  font=ctk.CTkFont(size=9, weight="bold"))
-        source_label.pack(side="left", padx=(0, 5))
+        self.cmbSource = ctk.CTkComboBox(selectors_frame, values=["TürkAnime", "AnimeciX", "Anizle", "Animely", "TRAnimeİzle"],
+                                       width=110, height=30,
+                                       command=self.on_source_change,
+                                       font=ctk.CTkFont(size=10))
+        self.cmbSource.pack(side="left", padx=(0, 5))
 
-        self.cmbSource = ctk.CTkComboBox(source_frame, values=["TürkAnime", "AnimeciX", "Anizle (deneysel)"],
-                                       width=100, height=32,
-                                       command=self.on_source_change)
-        self.cmbSource.pack(side="left")
-
-        # Başlık seçimi
-        title_frame = ctk.CTkFrame(search_frame, fg_color="transparent")
-        title_frame.pack(side="left", padx=(0, 8))
-
-        title_label = ctk.CTkLabel(title_frame, text="Başlık:",
-                                  font=ctk.CTkFont(size=9, weight="bold"))
-        title_label.pack(side="left", padx=(0, 5))
-
-        self.cmbTitle = ctk.CTkComboBox(title_frame, values=["🇺🇸 İngilizce: Bilinmiyor", "🇯🇵 Romanji: Bilinmiyor"],
-                                       width=150, height=32,
-                                       command=self.on_title_change)
+        self.cmbTitle = ctk.CTkComboBox(selectors_frame, values=["🇺🇸 İngilizce", "🇯🇵 Romanji"],
+                                       width=110, height=30,
+                                       command=self.on_title_change,
+                                       font=ctk.CTkFont(size=10))
         self.cmbTitle.pack(side="left")
 
-        self.searchEntry = ctk.CTkEntry(search_frame, placeholder_text="Anime ara...",
-                                      width=120, height=32,
-                                      font=ctk.CTkFont(size=11))
-        self.searchEntry.pack(side="left", padx=(0, 2))
+        # Arama kutusu
+        self.searchEntry = ctk.CTkEntry(search_frame, placeholder_text="🔍 Anime ara...",
+                                      width=180, height=30,
+                                      font=ctk.CTkFont(size=11),
+                                      corner_radius=15)
+        self.searchEntry.pack(side="left", padx=(0, 5))
 
-        self.btnSearch = ctk.CTkButton(search_frame, text="🔍", width=40, height=32,
-                                     command=self.on_search)
+        self.btnSearch = ctk.CTkButton(search_frame, text="Ara", width=50, height=30,
+                                     command=self.on_search,
+                                     fg_color="#ff6b6b", hover_color="#ff5252",
+                                     corner_radius=15, font=ctk.CTkFont(size=11))
         self.btnSearch.pack(side="left")
 
         # Sağ taraf - Kullanıcı alanı
         user_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        user_frame.pack(side="right", padx=6)
+        user_frame.pack(side="right", padx=12)
 
-        # AniList göster/gizle butonu
-        self.btnAniListToggle = ctk.CTkButton(user_frame, text="👤 Göster",
-                                            command=self.toggle_anilist_panel,
-                                            fg_color="#4ecdc4", hover_color="#45b7aa",
-                                            width=65, height=32)
-        self.btnAniListToggle.pack(side="left", padx=(0, 1))
+        # Ayarlar butonu
+        self.btnSettings = ctk.CTkButton(user_frame, text="⚙️", width=35, height=35,
+                                       command=self.on_open_settings,
+                                       fg_color="#333333", hover_color="#444444",
+                                       corner_radius=8)
+        self.btnSettings.pack(side="right", padx=(5, 0))
 
-        # AniList butonları (varsayılan olarak gizli)
+        # AniList butonları
         self.anilist_panel = ctk.CTkFrame(user_frame, fg_color="transparent")
-        self.anilist_panel.pack(side="left", padx=(0, 1))
+        self.anilist_panel.pack(side="right", padx=(0, 5))
 
-        self.btnAniListLogin = ctk.CTkButton(self.anilist_panel, text="Giriş",
+        self.btnAniListLogin = ctk.CTkButton(self.anilist_panel, text="AniList Giriş",
                                            command=self.on_anilist_login,
-                                           fg_color="#ff6b6b", hover_color="#ff5252",
-                                           width=50, height=32)
-        self.btnAniListLogin.pack(side="left", padx=(0, 1))
+                                           fg_color="#02a9ff", hover_color="#0294de",
+                                           width=90, height=30, corner_radius=15,
+                                           font=ctk.CTkFont(size=10))
+        self.btnAniListLogin.pack(side="left", padx=(0, 5))
 
         self.btnAniListLogout = ctk.CTkButton(self.anilist_panel, text="Çıkış",
                                             command=self.on_anilist_logout,
-                                            fg_color="#666666", width=40, height=32)
-        self.btnAniListLogout.pack(side="left", padx=(0, 1))
+                                            fg_color="#666666", width=50, height=30,
+                                            corner_radius=15, font=ctk.CTkFont(size=10))
+        self.btnAniListLogout.pack(side="left", padx=(0, 5))
+        self.btnAniListLogout.pack_forget()  # Başlangıçta gizli
 
-        # Kullanıcı adı label'ı (hover için)
-        self.lblAniListUser = ctk.CTkLabel(self.anilist_panel, text="Giriş yapılmamış",
-                                         font=ctk.CTkFont(size=9),
+        # Kullanıcı adı label'ı
+        self.lblAniListUser = ctk.CTkLabel(self.anilist_panel, text="",
+                                         font=ctk.CTkFont(size=10),
                                          text_color="#cccccc")
-        self.lblAniListUser.pack(side="left", padx=(2, 2))
+        self.lblAniListUser.pack(side="left", padx=(0, 5))
 
-        # Avatar için image label (hover ile tooltip)
-        self.avatarLabel = ctk.CTkLabel(self.anilist_panel, text="", width=28, height=28)
-        self.avatarLabel.pack(side="left", padx=(0, 1))
+        # Avatar için image label
+        self.avatarLabel = ctk.CTkLabel(self.anilist_panel, text="", width=30, height=30)
+        self.avatarLabel.pack(side="left")
 
         # Avatar'a hover efekti için
         self.avatarLabel.bind("<Enter>", self.show_user_tooltip)
         self.avatarLabel.bind("<Leave>", self.hide_user_tooltip)
 
-        # Ayarlar butonu
-        self.btnSettings = ctk.CTkButton(user_frame, text="⚙️", width=32, height=32,
-                                       command=self.on_open_settings)
-        self.btnSettings.pack(side="left")
+        self.anilist_visible = True
 
-        # AniList panelini başlangıçta gizle
-        self.anilist_panel.pack_forget()
-        self.anilist_visible = False
+    def show_season(self):
+        """Bu sezon sayfası göster - LiveChart verisi."""
+        self.current_view = "season"
+        self.clear_content_area()
+
+        # Navigasyon butonlarını güncelle
+        self._update_nav_buttons("season")
+
+        # Discord Rich Presence güncelle
+        self.update_discord_presence("Bu sezon animelerine bakıyor", "TürkAnime GUI")
+
+        # Başlık
+        title_frame = ctk.CTkFrame(self.content_area, fg_color="transparent")
+        title_frame.pack(fill="x", pady=(20, 20))
+
+        back_btn = ctk.CTkButton(title_frame, text="← Ana Sayfa",
+                               command=self.show_home,
+                               fg_color="transparent", text_color="#ff6b6b",
+                               font=ctk.CTkFont(size=14, weight="bold"))
+        back_btn.pack(side="left")
+
+        # Sezon bilgisi
+        from datetime import datetime
+        now = datetime.now()
+        month = now.month
+        year = now.year
+        if month in [1, 2, 3]:
+            season_name = "Kış"
+        elif month in [4, 5, 6]:
+            season_name = "İlkbahar"
+        elif month in [7, 8, 9]:
+            season_name = "Yaz"
+        else:
+            season_name = "Sonbahar"
+
+        season_title = ctk.CTkLabel(title_frame, text=f"📺 {season_name} {year} Sezonu",
+                    font=ctk.CTkFont(size=28, weight="bold"),
+                    text_color="#ffffff")
+        season_title.pack(side="left", padx=30)
+
+        season_desc = ctk.CTkLabel(title_frame, text="MyAnimeList verisi • Jikan API",
+                                 font=ctk.CTkFont(size=11),
+                                 text_color="#888888")
+        season_desc.pack(side="left")
+
+        # Sezon grid
+        self.season_grid = ctk.CTkFrame(self.content_area, fg_color="transparent")
+        self.season_grid.pack(fill="both", expand=True)
+
+        # Loading
+        loading_label = ctk.CTkLabel(self.season_grid, text="Bu sezon animeler yükleniyor...",
+                                   font=ctk.CTkFont(size=16),
+                                   text_color="#888888")
+        loading_label.pack(pady=50)
+
+        # Jikan API'den sezon animelerini yükle
+        def load_worker():
+            try:
+                if JIKAN_AVAILABLE:
+                    seasonal = get_seasonal_anime_list()
+                    if seasonal and len(seasonal) > 0:
+                        self.after(0, lambda: self.display_season_anime(seasonal, loading_label))
+                        return
+                
+                # Fallback to AniList seasonal
+                seasonal = anilist_client.get_seasonal_anime()
+                self.after(0, lambda: self.display_season_anime(seasonal, loading_label))
+            except Exception as e:
+                error_msg = str(e)
+                self.after(0, lambda: self.show_error(error_msg, loading_label))
+
+        threading.Thread(target=load_worker, daemon=True).start()
+
+    def display_season_anime(self, anime_list, loading_label):
+        """Sezon animelerini göster."""
+        loading_label.destroy()
+
+        # Anime listesini sakla (resize için)
+        self._season_anime_list = anime_list
+
+        # Grid'i oluştur
+        self._update_season_grid()
+
+    def _update_season_grid(self):
+        """Season grid'i yeniden oluştur."""
+        if not hasattr(self, 'season_grid') or not self.season_grid.winfo_exists():
+            return
+
+        # Mevcut içeriği temizle
+        for widget in self.season_grid.winfo_children():
+            widget.destroy()
+
+        # Sütun sayısını hesapla
+        try:
+            available_width = self.season_grid.winfo_width()
+            if available_width < 100:
+                available_width = 1200
+        except:
+            available_width = 1200
+
+        max_cols = self._calculate_columns(available_width)
+
+        row = 0
+        col = 0
+
+        for anime in self._season_anime_list:
+            if col >= max_cols:
+                col = 0
+                row += 1
+
+            self.create_anime_card(self.season_grid, anime, row, col, max_cols)
+            col += 1
+
+    def _update_nav_buttons(self, active: str):
+        """Navigasyon butonlarını güncelle."""
+        buttons = {
+            'home': self.btnHome,
+            'season': self.btnSeason if hasattr(self, 'btnSeason') else None,
+            'trending': self.btnTrending,
+            'downloads': self.btnDownloads,
+            'watchlist': self.btnWatchlist if hasattr(self, 'btnWatchlist') else None
+        }
+
+        for name, btn in buttons.items():
+            if btn:
+                if name == active:
+                    btn.configure(text_color="#ffffff", font=ctk.CTkFont(size=11, weight="bold"))
+                else:
+                    btn.configure(text_color="#cccccc", font=ctk.CTkFont(size=11))
 
     def create_home_content(self):
         """Ana sayfa içeriği oluştur."""
@@ -2055,268 +2217,309 @@ class MainWindow(ctk.CTk):
         # Mevcut içeriği temizle
         self.clear_content_area()
 
-        # Ayarlar paneli oluştur
-        settings_frame = ctk.CTkFrame(self.content_area, fg_color="#2a2a2a")
-        settings_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        # Başlık frame
+        title_frame = ctk.CTkFrame(self.content_area, fg_color="transparent")
+        title_frame.pack(fill="x", pady=(20, 20))
 
-        # Başlık
-        title_label = ctk.CTkLabel(settings_frame, text="⚙️ Ayarlar",
-                                 font=ctk.CTkFont(size=24, weight="bold"),
-                                 text_color="#ffffff")
-        title_label.pack(pady=(20, 10))
-
-        # Geri butonu
-        back_btn = ctk.CTkButton(settings_frame, text="← Ana Sayfa",
+        back_btn = ctk.CTkButton(title_frame, text="← Ana Sayfa",
                                command=self.show_home,
                                fg_color="transparent", text_color="#ff6b6b",
                                font=ctk.CTkFont(size=14, weight="bold"))
-        back_btn.pack(anchor="nw", pady=(0, 20))
+        back_btn.pack(side="left")
 
-        # Ayarlar içeriği
-        content_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        content_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        title_label = ctk.CTkLabel(title_frame, text="⚙️ Ayarlar",
+                                 font=ctk.CTkFont(size=28, weight="bold"),
+                                 text_color="#ffffff")
+        title_label.pack(side="left", padx=30)
+
+        # İki sütunlu düzen
+        columns_frame = ctk.CTkFrame(self.content_area, fg_color="transparent")
+        columns_frame.pack(fill="both", expand=True, padx=20)
+
+        # Sol sütun
+        left_column = ctk.CTkFrame(columns_frame, fg_color="transparent")
+        left_column.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+        # Sağ sütun
+        right_column = ctk.CTkFrame(columns_frame, fg_color="transparent")
+        right_column.pack(side="left", fill="both", expand=True, padx=(10, 0))
 
         # Dosya ayarları
         self.dosya = Dosyalar()
         a = self.dosya.ayarlar
 
+        # === SOL SÜTUN ===
+        
         # İndirme ayarları
-        download_frame = ctk.CTkFrame(content_frame, fg_color="#1a1a1a")
-        download_frame.pack(fill="x", pady=(0, 10))
+        download_frame = ctk.CTkFrame(left_column, fg_color="#1a1a1a", corner_radius=12)
+        download_frame.pack(fill="x", pady=(0, 15))
 
-        download_title = ctk.CTkLabel(download_frame, text="İndirme Ayarları",
-                                    font=ctk.CTkFont(size=16, weight="bold"))
-        download_title.pack(pady=(10, 5))
+        download_header = ctk.CTkFrame(download_frame, fg_color="#ff6b6b", corner_radius=8, height=40)
+        download_header.pack(fill="x", padx=3, pady=3)
+        download_header.pack_propagate(False)
+        ctk.CTkLabel(download_header, text="⬇️ İndirme Ayarları",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text_color="#ffffff").pack(side="left", padx=15, pady=8)
 
         # Paralel indirme sayısı
         parallel_frame = ctk.CTkFrame(download_frame, fg_color="transparent")
-        parallel_frame.pack(fill="x", padx=10, pady=5)
+        parallel_frame.pack(fill="x", padx=15, pady=8)
 
-        parallel_label = ctk.CTkLabel(parallel_frame, text="Paralel indirme sayısı:")
-        parallel_label.pack(side="left")
+        ctk.CTkLabel(parallel_frame, text="Paralel indirme sayısı:",
+                    font=ctk.CTkFont(size=12)).pack(side="left")
 
-        self.spinParallel = ctk.CTkEntry(parallel_frame, width=100)
+        self.spinParallel = ctk.CTkEntry(parallel_frame, width=80, height=30)
         self.spinParallel.pack(side="right")
         self.spinParallel.insert(0, str(a.get("paralel indirme sayisi", 3)))
 
-        # Maksimum çözünürlük
-        maxres_frame = ctk.CTkFrame(download_frame, fg_color="transparent")
-        maxres_frame.pack(fill="x", padx=10, pady=5)
-
-        self.chkMaxRes = ctk.CTkCheckBox(maxres_frame, text="Maksimum çözünürlük")
-        self.chkMaxRes.pack(side="left")
-        self.chkMaxRes.select() if a.get("max resolution", True) else None
-
         # 1080p aday sayısı
         early_frame = ctk.CTkFrame(download_frame, fg_color="transparent")
-        early_frame.pack(fill="x", padx=10, pady=5)
+        early_frame.pack(fill="x", padx=15, pady=8)
 
-        early_label = ctk.CTkLabel(early_frame, text="1080p aday sayısı:")
-        early_label.pack(side="left")
+        ctk.CTkLabel(early_frame, text="1080p aday sayısı:",
+                    font=ctk.CTkFont(size=12)).pack(side="left")
 
-        self.spinEarlySubset = ctk.CTkEntry(early_frame, width=100)
+        self.spinEarlySubset = ctk.CTkEntry(early_frame, width=80, height=30)
         self.spinEarlySubset.pack(side="right")
         self.spinEarlySubset.insert(0, str(a.get("1080p aday sayısı", 8)))
 
-        # Aria2c kullan
-        aria_frame = ctk.CTkFrame(download_frame, fg_color="transparent")
-        aria_frame.pack(fill="x", padx=10, pady=(5, 10))
+        # Checkboxlar
+        checkbox_frame = ctk.CTkFrame(download_frame, fg_color="transparent")
+        checkbox_frame.pack(fill="x", padx=15, pady=(8, 15))
 
-        self.chkAria2 = ctk.CTkCheckBox(aria_frame, text="Aria2c kullan")
-        self.chkAria2.pack(side="left")
-        self.chkAria2.select() if a.get("aria2c kullan", False) else None
+        self.chkMaxRes = ctk.CTkCheckBox(checkbox_frame, text="Maksimum çözünürlük",
+                                        font=ctk.CTkFont(size=11))
+        self.chkMaxRes.pack(anchor="w", pady=3)
+        if a.get("max resolution", True):
+            self.chkMaxRes.select()
+
+        self.chkAria2 = ctk.CTkCheckBox(checkbox_frame, text="Aria2c kullan (hızlı indirme)",
+                                       font=ctk.CTkFont(size=11))
+        self.chkAria2.pack(anchor="w", pady=3)
+        if a.get("aria2c kullan", False):
+            self.chkAria2.select()
 
         # Oynatma ayarları
-        play_frame = ctk.CTkFrame(content_frame, fg_color="#1a1a1a")
-        play_frame.pack(fill="x", pady=(0, 10))
+        play_frame = ctk.CTkFrame(left_column, fg_color="#1a1a1a", corner_radius=12)
+        play_frame.pack(fill="x", pady=(0, 15))
 
-        play_title = ctk.CTkLabel(play_frame, text="Oynatma Ayarları",
-                                font=ctk.CTkFont(size=16, weight="bold"))
-        play_title.pack(pady=(10, 5))
+        play_header = ctk.CTkFrame(play_frame, fg_color="#4ecdc4", corner_radius=8, height=40)
+        play_header.pack(fill="x", padx=3, pady=3)
+        play_header.pack_propagate(False)
+        ctk.CTkLabel(play_header, text="▶️ Oynatma Ayarları",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text_color="#ffffff").pack(side="left", padx=15, pady=8)
 
-        # Manuel fansub seçimi
-        manual_frame = ctk.CTkFrame(play_frame, fg_color="transparent")
-        manual_frame.pack(fill="x", padx=10, pady=5)
+        play_checkbox_frame = ctk.CTkFrame(play_frame, fg_color="transparent")
+        play_checkbox_frame.pack(fill="x", padx=15, pady=15)
 
-        self.chkManuel = ctk.CTkCheckBox(manual_frame, text="Manuel fansub seçimi")
-        self.chkManuel.pack(side="left")
-        self.chkManuel.select() if a.get("manuel fansub", False) else None
+        self.chkManuel = ctk.CTkCheckBox(play_checkbox_frame, text="Manuel fansub seçimi",
+                                        font=ctk.CTkFont(size=11))
+        self.chkManuel.pack(anchor="w", pady=3)
+        if a.get("manuel fansub", False):
+            self.chkManuel.select()
 
-        # İzlerken kaydet
-        save_frame = ctk.CTkFrame(play_frame, fg_color="transparent")
-        save_frame.pack(fill="x", padx=10, pady=5)
+        self.chkSaveWhileWatch = ctk.CTkCheckBox(play_checkbox_frame, text="İzlerken kaydet",
+                                                font=ctk.CTkFont(size=11))
+        self.chkSaveWhileWatch.pack(anchor="w", pady=3)
+        if a.get("izlerken kaydet", False):
+            self.chkSaveWhileWatch.select()
 
-        self.chkSaveWhileWatch = ctk.CTkCheckBox(save_frame, text="İzlerken kaydet")
-        self.chkSaveWhileWatch.pack(side="left")
-        self.chkSaveWhileWatch.select() if a.get("izlerken kaydet", False) else None
+        self.chkRememberMin = ctk.CTkCheckBox(play_checkbox_frame, text="Kaldığın dakikayı hatırla",
+                                             font=ctk.CTkFont(size=11))
+        self.chkRememberMin.pack(anchor="w", pady=3)
+        if a.get("dakika hatirla", True):
+            self.chkRememberMin.select()
 
-        # Dakika hatırla
-        minute_frame = ctk.CTkFrame(play_frame, fg_color="transparent")
-        minute_frame.pack(fill="x", padx=10, pady=(5, 10))
+        self.chkWatchedIcon = ctk.CTkCheckBox(play_checkbox_frame, text="İzlendi ikonu göster",
+                                              font=ctk.CTkFont(size=11))
+        self.chkWatchedIcon.pack(anchor="w", pady=3)
+        if a.get("izlendi ikonu", True):
+            self.chkWatchedIcon.select()
 
-        self.chkRememberMin = ctk.CTkCheckBox(minute_frame, text="Kaldığın dakikayı hatırla")
-        self.chkRememberMin.pack(side="left")
-        self.chkRememberMin.select() if a.get("dakika hatirla", True) else None
+        self.chkDiscordRPC = ctk.CTkCheckBox(play_checkbox_frame, text="Discord Rich Presence",
+                                             font=ctk.CTkFont(size=11))
+        self.chkDiscordRPC.pack(anchor="w", pady=3)
+        if a.get("discord_rich_presence", False):
+            self.chkDiscordRPC.select()
+
+        # === SAĞ SÜTUN ===
 
         # AniList OAuth ayarları
-        anilist_frame = ctk.CTkFrame(content_frame, fg_color="#1a1a1a")
-        anilist_frame.pack(fill="x", pady=(0, 10))
+        anilist_frame = ctk.CTkFrame(right_column, fg_color="#1a1a1a", corner_radius=12)
+        anilist_frame.pack(fill="x", pady=(0, 15))
 
-        anilist_title = ctk.CTkLabel(anilist_frame, text="AniList OAuth Ayarları",
-                                   font=ctk.CTkFont(size=16, weight="bold"))
-        anilist_title.pack(pady=(10, 5))
+        anilist_header = ctk.CTkFrame(anilist_frame, fg_color="#02a9ff", corner_radius=8, height=40)
+        anilist_header.pack(fill="x", padx=3, pady=3)
+        anilist_header.pack_propagate(False)
+        ctk.CTkLabel(anilist_header, text="🔗 AniList Entegrasyonu",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text_color="#ffffff").pack(side="left", padx=15, pady=8)
 
-        # client_id
-        row_client_id = ctk.CTkFrame(anilist_frame, fg_color="transparent")
-        row_client_id.pack(fill="x", padx=10, pady=5)
-        ctk.CTkLabel(row_client_id, text="Client ID:").pack(side="left")
-        self.txtAniClientId = ctk.CTkEntry(row_client_id, width=280)
-        self.txtAniClientId.pack(side="right")
+        anilist_content = ctk.CTkFrame(anilist_frame, fg_color="transparent")
+        anilist_content.pack(fill="x", padx=15, pady=15)
+
+        # Client ID
+        ctk.CTkLabel(anilist_content, text="Client ID:",
+                    font=ctk.CTkFont(size=11)).pack(anchor="w")
+        self.txtAniClientId = ctk.CTkEntry(anilist_content, width=250, height=30)
+        self.txtAniClientId.pack(anchor="w", pady=(3, 10))
         try:
             from turkanime_api.anilist_client import anilist_client as _ac
             self.txtAniClientId.insert(0, str(getattr(_ac, 'client_id', '')))
-        except Exception:
+        except:
             pass
 
-        # client_secret
-        row_client_secret = ctk.CTkFrame(anilist_frame, fg_color="transparent")
-        row_client_secret.pack(fill="x", padx=10, pady=5)
-        ctk.CTkLabel(row_client_secret, text="Client Secret:").pack(side="left")
-        self.txtAniClientSecret = ctk.CTkEntry(row_client_secret, width=280)
-        self.txtAniClientSecret.pack(side="right")
+        # Client Secret
+        ctk.CTkLabel(anilist_content, text="Client Secret:",
+                    font=ctk.CTkFont(size=11)).pack(anchor="w")
+        self.txtAniClientSecret = ctk.CTkEntry(anilist_content, width=250, height=30, show="•")
+        self.txtAniClientSecret.pack(anchor="w", pady=(3, 10))
         try:
             self.txtAniClientSecret.insert(0, str(getattr(_ac, 'client_secret', '')))
-        except Exception:
+        except:
             pass
 
-        # redirect_uri
-        row_redirect = ctk.CTkFrame(anilist_frame, fg_color="transparent")
-        row_redirect.pack(fill="x", padx=10, pady=5)
-        ctk.CTkLabel(row_redirect, text="Redirect URI:").pack(side="left")
-        self.txtAniRedirect = ctk.CTkEntry(row_redirect, width=280)
-        self.txtAniRedirect.pack(side="right")
+        # Redirect URI
+        ctk.CTkLabel(anilist_content, text="Redirect URI:",
+                    font=ctk.CTkFont(size=11)).pack(anchor="w")
+        self.txtAniRedirectUri = ctk.CTkEntry(anilist_content, width=250, height=30)
+        self.txtAniRedirectUri.pack(anchor="w", pady=(3, 5))
         try:
-            self.txtAniRedirect.insert(0, str(getattr(_ac, 'redirect_uri', 'http://localhost:9921/anilist-login')))
-        except Exception:
-            self.txtAniRedirect.insert(0, 'http://localhost:9921/anilist-login')
+            self.txtAniRedirectUri.insert(0, str(getattr(_ac, 'redirect_uri', 'http://localhost:9921/anilist-login')))
+        except:
+            pass
 
-        # Yardım notu
-        help_lbl = ctk.CTkLabel(anilist_frame,
-                              text="Not: AniList uygulama ayarındaki Redirect URL ile burada yazan aynı olmalı. Girişte hata alırsanız bu alanı kontrol edin.",
-                              text_color="#cccccc", wraplength=600, font=ctk.CTkFont(size=11))
-        help_lbl.pack(padx=10, pady=(0, 10))
+        # User Tracking ayarları
+        tracking_frame = ctk.CTkFrame(right_column, fg_color="#1a1a1a", corner_radius=12)
+        tracking_frame.pack(fill="x", pady=(0, 15))
 
-        # Arayüz ayarları
-        ui_frame = ctk.CTkFrame(content_frame, fg_color="#1a1a1a")
-        ui_frame.pack(fill="x", pady=(0, 10))
+        tracking_header = ctk.CTkFrame(tracking_frame, fg_color="#e17055", corner_radius=8, height=40)
+        tracking_header.pack(fill="x", padx=3, pady=3)
+        tracking_header.pack_propagate(False)
+        ctk.CTkLabel(tracking_header, text="📊 Kullanıcı İzleme",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text_color="#ffffff").pack(side="left", padx=15, pady=8)
 
-        ui_title = ctk.CTkLabel(ui_frame, text="Arayüz Ayarları",
-                              font=ctk.CTkFont(size=16, weight="bold"))
-        ui_title.pack(pady=(10, 5))
+        tracking_content = ctk.CTkFrame(tracking_frame, fg_color="transparent")
+        tracking_content.pack(fill="x", padx=15, pady=15)
 
-        # İzlendi/İndirildi ikonu
-        icon_frame = ctk.CTkFrame(ui_frame, fg_color="transparent")
-        icon_frame.pack(fill="x", padx=10, pady=(5, 10))
+        ctk.CTkLabel(tracking_content, text="User ID (izleme senkronizasyonu):",
+                    font=ctk.CTkFont(size=11)).pack(anchor="w")
+        
+        user_id_frame = ctk.CTkFrame(tracking_content, fg_color="transparent")
+        user_id_frame.pack(fill="x", pady=(3, 10))
+        
+        self.txtUserId = ctk.CTkEntry(user_id_frame, width=200, height=30,
+                                     placeholder_text="Otomatik oluşturulur")
+        self.txtUserId.pack(side="left")
+        current_user_id = a.get("user_id", "")
+        if current_user_id:
+            self.txtUserId.insert(0, current_user_id)
 
-        self.chkWatchedIcon = ctk.CTkCheckBox(icon_frame, text="İzlendi/İndirildi ikonu")
-        self.chkWatchedIcon.pack(side="left")
-        self.chkWatchedIcon.select() if a.get("izlendi ikonu", True) else None
+        ctk.CTkButton(user_id_frame, text="🔄", width=35, height=30,
+                     command=self.generate_new_user_id,
+                     fg_color="#e17055", hover_color="#d63031").pack(side="left", padx=5)
 
-        # İndirilenler klasörü
-        folder_frame = ctk.CTkFrame(content_frame, fg_color="#1a1a1a")
-        folder_frame.pack(fill="x", pady=(0, 20))
+        ctk.CTkLabel(tracking_content, text="ℹ️ User ID ile izlediğin bölümler\nfarklı cihazlarda senkronize edilir.",
+                    font=ctk.CTkFont(size=10), text_color="#888888").pack(anchor="w")
 
-        folder_title = ctk.CTkLabel(folder_frame, text="Klasör Ayarları",
-                                  font=ctk.CTkFont(size=16, weight="bold"))
-        folder_title.pack(pady=(10, 5))
+        # İndirme klasörü
+        folder_frame = ctk.CTkFrame(right_column, fg_color="#1a1a1a", corner_radius=12)
+        folder_frame.pack(fill="x", pady=(0, 15))
 
-        folder_input_frame = ctk.CTkFrame(folder_frame, fg_color="transparent")
-        folder_input_frame.pack(fill="x", padx=10, pady=5)
+        folder_header = ctk.CTkFrame(folder_frame, fg_color="#a29bfe", corner_radius=8, height=40)
+        folder_header.pack(fill="x", padx=3, pady=3)
+        folder_header.pack_propagate(False)
+        ctk.CTkLabel(folder_header, text="📁 Klasör Ayarları",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text_color="#ffffff").pack(side="left", padx=15, pady=8)
 
-        self.txtDownloads = ctk.CTkEntry(folder_input_frame, width=300)
-        self.txtDownloads.pack(side="left", padx=(0, 10))
-        self.txtDownloads.insert(0, a.get("indirilenler", "."))
+        folder_content = ctk.CTkFrame(folder_frame, fg_color="transparent")
+        folder_content.pack(fill="x", padx=15, pady=15)
 
-        btnBrowse = ctk.CTkButton(folder_input_frame, text="Seç…",
-                                command=self.on_choose_dir)
-        btnBrowse.pack(side="left")
+        ctk.CTkLabel(folder_content, text="İndirme klasörü:",
+                    font=ctk.CTkFont(size=11)).pack(anchor="w")
+        
+        folder_entry_frame = ctk.CTkFrame(folder_content, fg_color="transparent")
+        folder_entry_frame.pack(fill="x", pady=(3, 0))
+        
+        self.txtDownloadFolder = ctk.CTkEntry(folder_entry_frame, width=200, height=30)
+        self.txtDownloadFolder.pack(side="left")
+        self.txtDownloadFolder.insert(0, a.get("indirilenler", "."))
 
-        # Discord Rich Presence ayarları
-        discord_frame = ctk.CTkFrame(content_frame, fg_color="#1a1a1a")
-        discord_frame.pack(fill="x", pady=(0, 20))
+        ctk.CTkButton(folder_entry_frame, text="📂", width=35, height=30,
+                     command=self.browse_download_folder).pack(side="left", padx=5)
 
-        discord_title = ctk.CTkLabel(discord_frame, text="Discord Rich Presence",
-                                   font=ctk.CTkFont(size=16, weight="bold"))
-        discord_title.pack(pady=(10, 5))
+        # Kaydet butonu
+        save_frame = ctk.CTkFrame(self.content_area, fg_color="transparent")
+        save_frame.pack(fill="x", pady=20, padx=20)
 
-        discord_check_frame = ctk.CTkFrame(discord_frame, fg_color="transparent")
-        discord_check_frame.pack(fill="x", padx=10, pady=(5, 10))
+        ctk.CTkButton(save_frame, text="💾 Ayarları Kaydet",
+                     command=self.save_settings,
+                     fg_color="#ff6b6b", hover_color="#ff5252",
+                     width=200, height=40, corner_radius=20,
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(side="right")
 
-        self.chkDiscordRPC = ctk.CTkCheckBox(discord_check_frame, text="Discord Rich Presence'i etkinleştir")
-        self.chkDiscordRPC.pack(side="left")
-        self.chkDiscordRPC.select() if a.get("discord_rich_presence", True) else None
+    def browse_download_folder(self):
+        """İndirme klasörü seç."""
+        from tkinter import filedialog
+        folder = filedialog.askdirectory()
+        if folder:
+            self.txtDownloadFolder.delete(0, "end")
+            self.txtDownloadFolder.insert(0, folder)
 
-        # Diğer ayarlar
-        other_frame = ctk.CTkFrame(content_frame, fg_color="#1a1a1a")
-        other_frame.pack(fill="x", pady=(0, 20))
+    def save_settings(self):
+        """Ayarları kaydet."""
+        try:
+            self.dosya.set_ayar("manuel fansub", self.chkManuel.get())
+            self.dosya.set_ayar("izlerken kaydet", self.chkSaveWhileWatch.get())
+            self.dosya.set_ayar("paralel indirme sayisi", int(self.spinParallel.get()))
+            self.dosya.set_ayar("max resolution", self.chkMaxRes.get())
+            self.dosya.set_ayar("1080p aday sayısı", int(self.spinEarlySubset.get()))
+            self.dosya.set_ayar("dakika hatirla", self.chkRememberMin.get())
+            self.dosya.set_ayar("aria2c kullan", self.chkAria2.get())
+            self.dosya.set_ayar("indirilenler", self.txtDownloadFolder.get())
+            self.dosya.set_ayar("izlendi ikonu", self.chkWatchedIcon.get())
+            self.dosya.set_ayar("discord_rich_presence", self.chkDiscordRPC.get())
+            
+            # User ID kaydet
+            user_id = self.txtUserId.get().strip()
+            if user_id:
+                self.dosya.set_ayar("user_id", user_id)
 
-        other_title = ctk.CTkLabel(other_frame, text="Diğer Ayarlar",
-                                 font=ctk.CTkFont(size=16, weight="bold"))
-        other_title.pack(pady=(10, 5))
+            # Discord Rich Presence ayarını uygula
+            if self.chkDiscordRPC.get():
+                if not self.discord_connected:
+                    self.init_discord_rpc()
+                    if self.discord_connected:
+                        self.message("Discord Rich Presence açıldı", error=False)
+            else:
+                if self.discord_connected:
+                    self.disconnect_discord_rpc()
+                    self.message("Discord Rich Presence kapatıldı", error=False)
 
-        # User ID
-        userid_frame = ctk.CTkFrame(other_frame, fg_color="transparent")
-        userid_frame.pack(fill="x", padx=10, pady=(5, 10))
+            # AniList ayarlarını kaydet
+            try:
+                from turkanime_api.anilist_client import anilist_client as _ac
+                _ac.client_id = self.txtAniClientId.get()
+                _ac.client_secret = self.txtAniClientSecret.get()
+                _ac.redirect_uri = self.txtAniRedirectUri.get()
+                _ac._save_config()
+            except:
+                pass
 
-        userid_label = ctk.CTkLabel(userid_frame, text="User ID:")
-        userid_label.pack(side="left")
+            self.message("✅ Ayarlar kaydedildi!")
+        except Exception as e:
+            self.message(f"❌ Ayar kaydetme hatası: {e}", error=True)
 
-        self.txtUserId = ctk.CTkEntry(userid_frame, width=300)
-        self.txtUserId.pack(side="right")
-        self.txtUserId.insert(0, a.get("user_id", ""))
-
-        # Güncelleme ayarları
-        update_frame = ctk.CTkFrame(content_frame, fg_color="#1a1a1a")
-        update_frame.pack(fill="x", pady=(0, 20))
-
-        update_title = ctk.CTkLabel(update_frame, text="Güncelleme Ayarları",
-                                  font=ctk.CTkFont(size=16, weight="bold"))
-        update_title.pack(pady=(10, 5))
-
-        update_check_frame = ctk.CTkFrame(update_frame, fg_color="transparent")
-        update_check_frame.pack(fill="x", padx=10, pady=(5, 10))
-
-        btnCheckUpdate = ctk.CTkButton(update_check_frame, text="🔄 Güncelleme Kontrolü",
-                                     command=self.on_check_update,
-                                     fg_color="#4ecdc4", hover_color="#45b7aa")
-        btnCheckUpdate.pack(side="left")
-
-        # Butonlar
-        buttons_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        buttons_frame.pack(fill="x", padx=20, pady=(0, 20))
-
-        btnSave = ctk.CTkButton(buttons_frame, text="💾 Kaydet",
-                              command=self.on_save_settings,
-                              fg_color="#4ecdc4", hover_color="#45b7aa",
-                              width=120, height=40)
-        btnSave.pack(side="left", padx=(0, 10))
-
-        btnCancel = ctk.CTkButton(buttons_frame, text="❌ İptal",
-                                command=self.show_home,
-                                fg_color="#666666", width=120, height=40)
-        btnCancel.pack(side="left")
-
-        # AniList yardımcı butonları (ayar ekranında alt kısım)
-        al_buttons = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        al_buttons.pack(fill="x", padx=20, pady=(0, 10))
-        btnOpenLogin = ctk.CTkButton(al_buttons, text="🔗 Giriş Sayfasını Aç",
-                                  command=lambda: webbrowser.open(anilist_client.get_auth_url(response_type="code")),
-                                  fg_color="#ff6b6b", hover_color="#ff5252")
-        btnOpenLogin.pack(side="left")
-        btnClearTok = ctk.CTkButton(al_buttons, text="🧹 Token Temizle",
-                                  command=lambda: (anilist_client.clear_tokens(), self.check_anilist_auth_status(), self.message("Token temizlendi")),
-                                  fg_color="#666666")
-        btnClearTok.pack(side="left", padx=(10,0))
+    def generate_new_user_id(self):
+        """Yeni User ID oluştur."""
+        import uuid
+        new_id = str(uuid.uuid4())
+        self.txtUserId.delete(0, "end")
+        self.txtUserId.insert(0, new_id)
+        self.message("🔄 Yeni User ID oluşturuldu. Kaydetmeyi unutmayın!")
 
     def on_check_update(self):
         """Güncelleme kontrolünü başlat."""
@@ -2352,58 +2555,21 @@ class MainWindow(ctk.CTk):
                 print(f"Otomatik güncelleme kontrolü hatası: {e}")
         threading.Thread(target=worker, daemon=True).start()
 
-    def on_choose_dir(self):
-        """İndirilenler klasörü seç."""
-        d = filedialog.askdirectory()
-        if d:
-            self.txtDownloads.delete(0, "end")
-            self.txtDownloads.insert(0, d)
-
-    def on_save_settings(self):
-        """Ayarları kaydet."""
-        try:
-            self.dosya.set_ayar("manuel fansub", self.chkManuel.get())
-            self.dosya.set_ayar("izlerken kaydet", self.chkSaveWhileWatch.get())
-            self.dosya.set_ayar("izlendi ikonu", self.chkWatchedIcon.get())
-            self.dosya.set_ayar("paralel indirme sayisi", int(self.spinParallel.get()))
-            self.dosya.set_ayar("max resolution", self.chkMaxRes.get())
-            self.dosya.set_ayar("1080p aday sayısı", int(self.spinEarlySubset.get()))
-            self.dosya.set_ayar("dakika hatirla", self.chkRememberMin.get())
-            self.dosya.set_ayar("aria2c kullan", self.chkAria2.get())
-            self.dosya.set_ayar("indirilenler", self.txtDownloads.get())
-            self.dosya.set_ayar("discord_rich_presence", self.chkDiscordRPC.get())
-            self.dosya.set_ayar("user_id", self.txtUserId.get())
-
-            # Discord Rich Presence ayarını uygula
-            if self.chkDiscordRPC.get():
-                if not self.discord_connected:
-                    self.init_discord_rpc()
-                    if self.discord_connected:
-                        self.message("Discord Rich Presence açıldı", error=False)
-            else:
-                if self.discord_connected:
-                    self.disconnect_discord_rpc()
-                    self.message("Discord Rich Presence kapatıldı", error=False)
-
-            # AniList OAuth ayarlarını uygula
-            try:
-                cid = self.txtAniClientId.get().strip()
-                csec = self.txtAniClientSecret.get().strip()
-                ruri = self.txtAniRedirect.get().strip()
-                if cid and ruri:
-                    anilist_client.set_oauth_config(cid, csec, ruri)
-            except Exception as e:
-                self.message(f"AniList ayarları kaydedilirken hata: {e}", error=True)
-
-            self.message("Ayarlar kaydedildi!")
-            self.show_home()
-        except ValueError as e:
-            self.message(f"Ayar kaydetme hatası: {str(e)}")
-
     def load_trending_anime(self):
-        """Trend animeleri yükle."""
+        """Trend animeleri yükle - Jikan API (top airing) veya AniList'ten."""
         def load_worker():
             try:
+                # Önce Jikan API'den top airing animeleri dene
+                if JIKAN_AVAILABLE:
+                    try:
+                        trending = get_trending_anime_list(limit=12)
+                        if trending and len(trending) > 0:
+                            self.after(0, lambda: self.display_trending_anime(trending))
+                            return
+                    except Exception as jk_err:
+                        print(f"[Jikan] Hata: {jk_err}")
+                
+                # Jikan başarısız olduysa AniList'e düş
                 trending = anilist_client.get_trending_anime(page=1, per_page=12)
                 self.after(0, lambda: self.display_trending_anime(trending))
             except Exception as e:
@@ -2690,10 +2856,11 @@ class MainWindow(ctk.CTk):
                                    text_color="#ffffff")
         summary_title.pack(anchor="w", pady=(0, 10))
 
-        description = anime_data.get('description', 'Özet bulunamadı.')
+        description = anime_data.get('description') or 'Özet bulunamadı.'
         # HTML taglerini temizle
         import re
-        description = re.sub(r'<[^>]+>', '', description)
+        if description:
+            description = re.sub(r'<[^>]+>', '', description)
 
         summary_textbox = ctk.CTkTextbox(right_frame, wrap="word", height=200)
         summary_textbox.pack(fill="x", pady=(0, 20))
@@ -2713,14 +2880,24 @@ class MainWindow(ctk.CTk):
                                       text_color="#cccccc", wraplength=400)
             genres_label.pack(anchor="w", pady=(0, 20))
 
-        # Stüdyolar
-        if anime_data.get('studios', {}).get('nodes'):
+        # Stüdyolar - hem AniList (dict) hem LiveChart (list) formatını destekle
+        studios_data = anime_data.get('studios')
+        studios_list = []
+        if studios_data:
+            if isinstance(studios_data, dict) and studios_data.get('nodes'):
+                # AniList formatı: {'nodes': [{'name': 'Studio Name'}, ...]}
+                studios_list = [s['name'] for s in studios_data['nodes'] if s.get('name')]
+            elif isinstance(studios_data, list):
+                # LiveChart formatı: ['Studio Name', ...]
+                studios_list = [s for s in studios_data if isinstance(s, str)]
+        
+        if studios_list:
             studios_title = ctk.CTkLabel(right_frame, text="🎬 Stüdyo",
                                        font=ctk.CTkFont(size=16, weight="bold"),
                                        text_color="#ffffff")
             studios_title.pack(anchor="w", pady=(0, 10))
 
-            studios_text = ", ".join([s['name'] for s in anime_data['studios']['nodes']])
+            studios_text = ", ".join(studios_list)
             studios_label = ctk.CTkLabel(right_frame, text=studios_text,
                                        font=ctk.CTkFont(size=12),
                                        text_color="#cccccc")
@@ -2788,6 +2965,9 @@ class MainWindow(ctk.CTk):
                 source_timeouts = {
                     "TürkAnime": 8,   # 8 saniye
                     "AnimeciX": 8,    # 8 saniye
+                    "Anizle": 8,      # 8 saniye
+                    "Animely": 10,    # 10 saniye
+                    "TRAnimeİzle": 12, # 12 saniye (bot koruma)
                     "AniList": 5      # 5 saniye (daha hızlı)
                 }
 
@@ -2931,6 +3111,104 @@ class MainWindow(ctk.CTk):
                                 with open("debug.log", "a") as f:
                                     f.write(f"ERROR: {source_name} adapter bulunamadı\n")
 
+                        elif source_name == "Animely":
+                            # SearchEngine kullanarak Animely'de ara
+                            adapter = search_engine.get_adapter(source_name)
+                            if adapter:
+                                search_results = adapter.search_anime(query_title, limit=1)
+                                if search_results:
+                                    slug, name = search_results[0]
+                                    
+                                    # Animely bölümlerini al
+                                    animely_episodes = get_animely_episodes(slug)
+                                    episodes = []
+                                    ada = AdapterAnime(slug=slug, title=name)
+                                    
+                                    for e in animely_episodes:
+                                        # Animely direkt video linki veriyor
+                                        streams = e.get_streams()
+                                        video_url = streams[0].url if streams else ""
+                                        
+                                        ab = AdapterBolum(
+                                            url=video_url,
+                                            title=e.title,
+                                            anime=ada,
+                                            player_name="ANIMELY"
+                                        )
+                                        episodes.append({
+                                            "title": e.title,
+                                            "obj": ab,
+                                            "anime_title": name
+                                        })
+                                    sources_data[source_name] = episodes
+                                    source_status[source_name] = "completed"
+                                    with open("debug.log", "a") as f:
+                                        f.write(f"DEBUG: {source_name} tamamlandı - {len(episodes)} bölüm\n")
+                                else:
+                                    source_status[source_name] = "no_results"
+                                    with open("debug.log", "a") as f:
+                                        f.write(f"DEBUG: {source_name} - sonuç bulunamadı\n")
+                            else:
+                                source_status[source_name] = "error"
+                                with open("debug.log", "a") as f:
+                                    f.write(f"ERROR: {source_name} adapter bulunamadı\n")
+
+                        elif source_name == "TRAnimeİzle":
+                            # TRAnimeİzle'de ara
+                            try:
+                                search_results = search_tranime(query_title, limit=1)
+                                if search_results:
+                                    slug, name = search_results[0]
+                                    
+                                    # TRAnimeİzle bölümlerini al
+                                    tranime_episodes = get_tranime_episodes(slug)
+                                    episodes = []
+                                    ada = AdapterAnime(slug=slug, title=name)
+                                    
+                                    for e in tranime_episodes:
+                                        # Stream provider: bölüm detaylarını alıp video linkini çıkarır
+                                        def make_stream_provider(ep_slug):
+                                            def provider(url):
+                                                try:
+                                                    ep_details = get_tranime_episode_details(ep_slug)
+                                                    if ep_details:
+                                                        sources = ep_details.get_sources()
+                                                        streams = []
+                                                        for s in sources:
+                                                            iframe = s.get_iframe()
+                                                            if iframe:
+                                                                streams.append({"url": iframe, "label": s.name})
+                                                        return streams
+                                                except Exception:
+                                                    pass
+                                                return []
+                                            return provider
+                                        
+                                        ab = AdapterBolum(
+                                            url=e.slug,  # Bölüm slug'ı
+                                            title=e.title,
+                                            anime=ada,
+                                            stream_provider=make_stream_provider(e.slug),
+                                            player_name="TRANIME"
+                                        )
+                                        episodes.append({
+                                            "title": e.title,
+                                            "obj": ab,
+                                            "anime_title": name
+                                        })
+                                    sources_data[source_name] = episodes
+                                    source_status[source_name] = "completed"
+                                    with open("debug.log", "a") as f:
+                                        f.write(f"DEBUG: {source_name} tamamlandı - {len(episodes)} bölüm\n")
+                                else:
+                                    source_status[source_name] = "no_results"
+                                    with open("debug.log", "a") as f:
+                                        f.write(f"DEBUG: {source_name} - sonuç bulunamadı\n")
+                            except Exception as e:
+                                source_status[source_name] = "error"
+                                with open("debug.log", "a") as f:
+                                    f.write(f"ERROR: {source_name} hatası: {str(e)}\n")
+
                         # Başarılı tamamlandı, timer'ı iptal et
                         timer.cancel()
                         elapsed_time = time.time() - start_time
@@ -2948,7 +3226,8 @@ class MainWindow(ctk.CTk):
 
                 # Paralel arama - her kaynak için ayrı thread
                 threads = []
-                for source_name in ["TürkAnime", "AnimeciX", "AniList", "Anizle"]:
+                all_sources = ["TürkAnime", "AnimeciX", "AniList", "Anizle", "Animely", "TRAnimeİzle"]
+                for source_name in all_sources:
                     timeout = source_timeouts.get(source_name, 10)
                     thread = threading.Thread(
                         target=search_source_with_timeout,
@@ -2959,11 +3238,11 @@ class MainWindow(ctk.CTk):
                     thread.start()
 
                 # Tüm thread'lerin bitmesini bekle (maksimum toplam süre)
-                total_timeout = 15  # Toplam maksimum 15 saniye
+                total_timeout = 18  # Toplam maksimum 18 saniye (TRAnimeİzle için arttırıldı)
                 start_total = time.time()
 
                 for i, thread in enumerate(threads):
-                    source_name = ["TürkAnime", "AnimeciX", "AniList", "Anizle"][i]
+                    source_name = all_sources[i]
                     # Eğer bu kaynak zaten timeout olduysa, bekleme
                     if source_status.get(source_name) == "timeout":
                         with open("debug.log", "a") as f:
@@ -3047,12 +3326,25 @@ class MainWindow(ctk.CTk):
             f.write("DEBUG: show_anime_details tamamlandı\n")
 
     def _check_and_correct_anime_name(self):
-        """Anime adını API'den kontrol et ve gerekirse düzelt."""
+        """Anime adını API'den kontrol et ve gerekirse düzelt.
+        
+        Sadece benzer isimler arasında düzeltme yapar.
+        Tamamen farklı animeleri düzeltmez.
+        """
         if not hasattr(self, 'selected_anime') or not self.selected_anime:
             return
 
         try:
             from turkanime_api.common.db import api_manager
+            from difflib import SequenceMatcher
+
+            def similarity(a: str, b: str) -> float:
+                """İki string arasındaki benzerlik oranını hesapla (0-1)."""
+                if not a or not b:
+                    return 0.0
+                a_lower = a.lower().strip()
+                b_lower = b.lower().strip()
+                return SequenceMatcher(None, a_lower, b_lower).ratio()
 
             # Mevcut anime adını al
             current_name = self.selected_anime.get('title', {}).get('romaji', '') or \
@@ -3062,27 +3354,38 @@ class MainWindow(ctk.CTk):
             if not current_name:
                 return
 
-            # API'den eşleştirmeleri ara
-            matches = api_manager.get_anime_matches(current_name)
+            # API'den bu anime için eşleştirmeleri ara (search_anime_matches kullan!)
+            matches = api_manager.search_anime_matches(current_name)
             if not matches:
                 return
 
-            # En çok eşleştirilen anime adını bul
+            # Sadece benzer isimleri say (benzerlik > 0.5)
+            SIMILARITY_THRESHOLD = 0.5
             name_counts = {}
             for match in matches:
                 anime_title = match.get('anime_title', '')
                 if anime_title:
-                    name_counts[anime_title] = name_counts.get(anime_title, 0) + 1
+                    sim = similarity(current_name, anime_title)
+                    if sim >= SIMILARITY_THRESHOLD:
+                        # Benzerlik skoru ile birlikte say
+                        if anime_title not in name_counts:
+                            name_counts[anime_title] = {'count': 0, 'similarity': sim}
+                        name_counts[anime_title]['count'] += 1
 
             if not name_counts:
                 return
 
-            # En çok kullanılan anime adını al
-            correct_name = max(name_counts.items(), key=lambda x: x[1])[0]
+            # En yüksek (benzerlik * sayı) skoruna sahip olanı seç
+            best_match = max(
+                name_counts.items(),
+                key=lambda x: x[1]['similarity'] * x[1]['count']
+            )
+            correct_name = best_match[0]
+            best_similarity = best_match[1]['similarity']
 
-            # Eğer farklıysa güncelle
-            if correct_name != current_name:
-                print(f"Anime adı otomatik düzeltildi: {current_name} -> {correct_name}")
+            # Eğer farklıysa ve benzerlik yeterince yüksekse güncelle
+            if correct_name != current_name and best_similarity >= 0.6:
+                print(f"Anime adı otomatik düzeltildi: {current_name} -> {correct_name} (benzerlik: {best_similarity:.2f})")
 
                 # Anime adını güncelle
                 if 'title' not in self.selected_anime:
@@ -3140,11 +3443,11 @@ class MainWindow(ctk.CTk):
             return
 
         # Sadece bölümler için kullanılacak kaynakları ayır (AniList hariç)
-        display_sources = {k: v for k, v in self.all_episodes.items() if k in ["TürkAnime", "AnimeciX", "Anizle"]}
+        display_sources = {k: v for k, v in self.all_episodes.items() if k in ["TürkAnime", "AnimeciX", "Anizle", "Animely", "TRAnimeİzle"]}
 
         # Kaynak durumlarını kontrol et ve kullanıcıya bildir
         loaded_sources = [k for k, v in display_sources.items() if v and len(v) > 0]
-        failed_sources = [k for k in ["TürkAnime", "AnimeciX", "Anizle"] if k not in display_sources or not display_sources.get(k)]
+        failed_sources = [k for k in ["TürkAnime", "AnimeciX", "Anizle", "Animely", "TRAnimeİzle"] if k not in display_sources or not display_sources.get(k)]
 
         if loaded_sources:
             status_msg = f"✅ {len(loaded_sources)} kaynak yüklendi: {', '.join(loaded_sources)}"
@@ -3187,7 +3490,8 @@ class MainWindow(ctk.CTk):
                     self.episodes_list, display_sources, max_episodes_per_source=50,
                     on_play=self._play_episode, on_download=self._download_episode,
                     on_match=self._handle_anime_match, db_matches=db_matches,
-                    user_id=self.dosya.ayarlar.get('user_id'), anime_name=anime_name
+                    user_id=self.dosya.ayarlar.get('user_id'), anime_name=anime_name,
+                    main_window=self
                 )
 
                 # Bölüm bulunduğunda koşullu butonu gizle
@@ -3347,14 +3651,24 @@ class MainWindow(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _play_first_selected_episode(self):
-        if not getattr(self, 'episodes_vars', None):
-            self.message("Seçili bölüm yok", error=True)
-            return
-        for var, obj in self.episodes_vars:
-            if var.get():
-                self._play_episode(obj)
-                return
-        self.message("Önce bölüm seçin", error=True)
+        """İlk seçili bölümü oynat."""
+        selected = []
+        
+        # Önce source_accordion'dan seçili bölümleri al
+        if hasattr(self, 'source_accordion') and self.source_accordion:
+            selected = self.source_accordion.get_selected_episodes()
+        
+        # Eğer source_accordion'dan alınamadıysa episodes_vars'tan dene
+        if not selected and getattr(self, 'episodes_vars', None):
+            for var, obj in self.episodes_vars:
+                if var.get():
+                    selected.append(obj)
+                    break
+        
+        if selected:
+            self._play_episode(selected[0])
+        else:
+            self.message("❌ Önce bölüm seçin (checkbox'ları işaretleyin)", error=True)
 
     def _search_anime_again(self):
         """Yeni arama penceresi aç ve anime eşleştir.""" 
@@ -3384,35 +3698,47 @@ class MainWindow(ctk.CTk):
         threading.Thread(target=search_worker, daemon=True).start()
 
     def _download_selected_episodes(self):
-        if not getattr(self, 'episodes_vars', None):
-            self.message("Seçili bölüm yok", error=True)
+        """Seçili bölümleri indir - kaynak seçimi ile."""
+        if not hasattr(self, 'source_accordion') or not self.source_accordion:
+            self.message("❌ Bölüm listesi bulunamadı!", error=True)
             return
-        selected = [obj for var, obj in self.episodes_vars if var.get()]
-        if not selected:
-            # If no episodes are selected, fall back to the first episode or show an error
-            if getattr(self, 'episodes_objs', None) and self.episodes_objs:
-                selected = [self.episodes_objs[0]]  # Select the first episode as fallback
-            else:
-                self.message("İndirilecek bölüm bulunamadı", error=True)
+        
+        # Seçili bölüm var mı kontrol et
+        if not self.source_accordion.selected_episodes:
+            self.message("❌ İndirilecek bölüm seçilmedi! Checkbox'ları işaretleyin.", error=True)
+            return
+        
+        # Kaynak seçim dialogunu göster
+        def start_download(source_name: str):
+            """Seçilen kaynaktan indirmeyi başlat."""
+            selected = self.source_accordion.get_selected_episodes(source_name)
+            
+            if not selected:
+                self.message(f"❌ {source_name} kaynağında seçili bölüm bulunamadı!", error=True)
                 return
+            
+            # İndirme başlatıldığını göster
+            self.message(f"⬇️ {len(selected)} bölüm {source_name}'dan indiriliyor...", error=False)
+            
+            def worker():
+                try:
+                    # Discord Rich Presence güncelle
+                    if selected and selected[0].anime:
+                        anime_title = selected[0].anime.title
+                        self.update_discord_presence_download(anime_title, "0")
+                    
+                    dw = DownloadWorker(selected, update_callback=self.update_downloaded_list)
+                    dw.signals.connect_progress(lambda msg: self.after(0, lambda m=msg: self.status_label.configure(text=m) if hasattr(self, 'status_label') else None))
+                    dw.signals.connect_success(lambda: self.after(0, lambda: self.message(f"✅ {source_name}'dan indirme tamamlandı!")))
+                    dw.signals.connect_error(lambda msg: self.after(0, lambda m=msg: self.message(f"❌ İndirme hatası: {m}", error=True)))
+                    dw.run()
+                except Exception as e:
+                    self.after(0, lambda: self.message(f"❌ İndirme başlatılamadı: {e}", error=True))
+            
+            threading.Thread(target=worker, daemon=True).start()
         
-        def worker():
-            try:
-                # Discord Rich Presence güncelle
-                if selected and selected[0].anime:
-                    anime_title = selected[0].anime.title
-                    episode_count = len(selected)
-                    self.update_discord_presence_download(anime_title, "0")
-                
-                dw = DownloadWorker(selected, update_callback=self.update_downloaded_list)
-                dw.signals.connect_progress(lambda msg: self.status_label.configure(text=msg))
-                dw.signals.connect_success(lambda: self.message("İndirme tamamlandı!"))
-                dw.signals.connect_error(lambda msg: self.message(f"İndirme hatası: {msg}", error=True))
-                dw.run()
-            except Exception as e:
-                self.message(f"İndirme başlatılamadı: {e}", error=True)
-        
-        threading.Thread(target=worker, daemon=True).start()
+        # Kaynak seçim dialogunu göster
+        self.source_accordion.show_source_selection_dialog(start_download)
 
     def clear_content_area(self):
         """İçerik alanını temizle."""
@@ -3425,11 +3751,7 @@ class MainWindow(ctk.CTk):
         self.clear_content_area()
 
         # Navigasyon butonlarını güncelle
-        self.btnHome.configure(text_color="#ffffff", font=ctk.CTkFont(size=10, weight="bold"))
-        self.btnTrending.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
-        self.btnDownloads.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
-        if hasattr(self, 'btnWatchlist'):
-            self.btnWatchlist.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
+        self._update_nav_buttons("home")
 
         # Discord Rich Presence güncelle
         self.update_discord_presence("Ana sayfada", "TürkAnime GUI")
@@ -3440,16 +3762,12 @@ class MainWindow(ctk.CTk):
         self.create_home_content()
 
     def show_trending(self):
-        """Trend sayfası göster."""
+        """Trend sayfası göster - AniList trending."""
         self.current_view = "trending"
         self.clear_content_area()
 
         # Navigasyon butonlarını güncelle
-        self.btnHome.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
-        self.btnTrending.configure(text_color="#ffffff", font=ctk.CTkFont(size=10, weight="bold"))
-        self.btnDownloads.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
-        if hasattr(self, 'btnWatchlist'):
-            self.btnWatchlist.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
+        self._update_nav_buttons("trending")
 
         # Discord Rich Presence güncelle
         self.update_discord_presence("Trend animelere bakıyor", "TürkAnime GUI")
@@ -3464,12 +3782,17 @@ class MainWindow(ctk.CTk):
                                font=ctk.CTkFont(size=14, weight="bold"))
         back_btn.pack(side="left")
 
-        trending_title = ctk.CTkLabel(title_frame, text="🔥 Bu Hafta Trend",
+        trending_title = ctk.CTkLabel(title_frame, text="🔥 AniList Trend",
                     font=ctk.CTkFont(size=28, weight="bold"),
                     text_color="#ffffff")
         trending_title.pack(side="left", padx=30)
 
-    # Trend grid (use non-scrollable grid; page itself scrolls)
+        trend_desc = ctk.CTkLabel(title_frame, text="AniList topluluğunun en sevdiği animeler",
+                                font=ctk.CTkFont(size=11),
+                                text_color="#888888")
+        trend_desc.pack(side="left")
+
+        # Trend grid (use non-scrollable grid; page itself scrolls)
         self.trending_full_grid = ctk.CTkFrame(self.content_area, fg_color="transparent")
         self.trending_full_grid.pack(fill="both", expand=True)
 
@@ -3479,7 +3802,7 @@ class MainWindow(ctk.CTk):
                                    text_color="#888888")
         loading_label.pack(pady=50)
 
-        # Trend animeleri yükle
+        # Trend animeleri yükle - Sadece AniList
         def load_worker():
             try:
                 trending = anilist_client.get_trending_anime(page=1, per_page=50)
@@ -3496,11 +3819,7 @@ class MainWindow(ctk.CTk):
         self.clear_content_area()
 
         # Navigasyon butonlarını güncelle
-        self.btnHome.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
-        self.btnTrending.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
-        self.btnDownloads.configure(text_color="#ffffff", font=ctk.CTkFont(size=10, weight="bold"))
-        if hasattr(self, 'btnWatchlist'):
-            self.btnWatchlist.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
+        self._update_nav_buttons("downloads")
 
         # Discord Rich Presence güncelle
         self.update_discord_presence("İndirilenlere bakıyor", "TürkAnime GUI")
@@ -3738,14 +4057,67 @@ class MainWindow(ctk.CTk):
             self.message(f"Klasör açılırken hata: {e}", error=True)
 
     def display_full_trending(self, anime_list, loading_label):
-        """Tam trend listesini göster."""
+        """Tam trend listesini göster - responsive grid."""
         loading_label.destroy()
-
+        
+        # Anime listesini sakla (resize için)
+        self._trending_anime_list = anime_list
+        
+        # Responsive grid'i oluştur
+        self._update_trending_grid()
+        
+        # Pencere resize event'i ekle
+        if not hasattr(self, '_trending_resize_bound'):
+            self._trending_resize_bound = False
+        
+        if not self._trending_resize_bound:
+            self.bind("<Configure>", self._on_window_resize)
+            self._trending_resize_bound = True
+    
+    def _calculate_columns(self, available_width):
+        """Mevcut genişliğe göre sütun sayısı hesapla."""
+        card_width = 210  # Kart genişliği + padding
+        min_cols = 3
+        max_cols = 8
+        cols = max(min_cols, min(max_cols, available_width // card_width))
+        return cols
+    
+    def _on_window_resize(self, event=None):
+        """Pencere resize olduğunda grid'i güncelle."""
+        if not hasattr(self, 'current_view') or self.current_view != "trending":
+            return
+        if not hasattr(self, '_trending_anime_list') or not self._trending_anime_list:
+            return
+        
+        # Debounce için timer kullan
+        if hasattr(self, '_resize_timer'):
+            self.after_cancel(self._resize_timer)
+        
+        self._resize_timer = self.after(150, self._update_trending_grid)
+    
+    def _update_trending_grid(self):
+        """Trending grid'i yeniden oluştur."""
+        if not hasattr(self, 'trending_full_grid') or not self.trending_full_grid.winfo_exists():
+            return
+        
+        # Mevcut içeriği temizle
+        for widget in self.trending_full_grid.winfo_children():
+            widget.destroy()
+        
+        # Sütun sayısını hesapla
+        try:
+            available_width = self.trending_full_grid.winfo_width()
+            if available_width < 100:  # Widget henüz hazır değil
+                available_width = 1200
+        except:
+            available_width = 1200
+        
+        max_cols = self._calculate_columns(available_width)
+        
         row = 0
         col = 0
-        max_cols = 6
 
-        for anime in anime_list:
+        for anime in self._trending_anime_list:
             if col >= max_cols:
                 col = 0
                 row += 1
@@ -3763,11 +4135,7 @@ class MainWindow(ctk.CTk):
         self.clear_content_area()
 
         # Navigasyon butonlarını güncelle
-        self.btnHome.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
-        self.btnTrending.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
-        self.btnDownloads.configure(text_color="#cccccc", font=ctk.CTkFont(size=10))
-        if hasattr(self, 'btnWatchlist'):
-            self.btnWatchlist.configure(text_color="#ffffff", font=ctk.CTkFont(size=10, weight="bold"))
+        self._update_nav_buttons("watchlist")
 
         # Başlık
         title_frame = ctk.CTkFrame(self.content_area, fg_color="transparent")
@@ -3841,7 +4209,7 @@ class MainWindow(ctk.CTk):
         threading.Thread(target=load_worker, daemon=True).start()
 
     def display_watchlist(self, anime_list, loading_label):
-        """İzleme listesini göster."""
+        """İzleme listesini göster - responsive grid."""
         loading_label.destroy()
 
         if not anime_list:
@@ -3852,11 +4220,35 @@ class MainWindow(ctk.CTk):
             empty_label.pack(pady=50)
             return
 
+        # Anime listesini sakla (resize için)
+        self._watchlist_anime_list = anime_list
+        
+        # Grid'i oluştur
+        self._update_watchlist_grid()
+    
+    def _update_watchlist_grid(self):
+        """Watchlist grid'i yeniden oluştur."""
+        if not hasattr(self, 'watchlist_grid') or not self.watchlist_grid.winfo_exists():
+            return
+        
+        # Mevcut içeriği temizle
+        for widget in self.watchlist_grid.winfo_children():
+            widget.destroy()
+        
+        # Sütun sayısını hesapla
+        try:
+            available_width = self.watchlist_grid.winfo_width()
+            if available_width < 100:
+                available_width = 1200
+        except:
+            available_width = 1200
+        
+        max_cols = self._calculate_columns(available_width)
+
         row = 0
         col = 0
-        max_cols = 7
 
-        for anime in anime_list:
+        for anime in self._watchlist_anime_list:
             if col >= max_cols:
                 col = 0
                 row += 1
@@ -4267,42 +4659,75 @@ class MainWindow(ctk.CTk):
             self.message(f"Progress güncelleme hatası: {e}", error=True)
 
     def load_anilist_thumbnail(self, url: str, label: ctk.CTkLabel, width: int = 120, height: int = 160):
-        """Load and display AniList thumbnail asynchronously."""
+        """Load and display AniList thumbnail asynchronously with disk cache."""
         if not url:
             return
 
-        # Check cache first
-        if url in self.anilist_image_cache:
+        # Check memory cache first
+        cache_key = f"{url}_{width}_{height}"
+        if cache_key in self.anilist_image_cache:
             try:
-                label.configure(image=self.anilist_image_cache[url])
+                label.configure(image=self.anilist_image_cache[cache_key])
                 return
             except:
                 pass
 
         def load_image():
             try:
-                response = requests.get(url, timeout=10)
-                response.raise_for_status()
-
-                # Open image with PIL
-                image = Image.open(io.BytesIO(response.content))
-
-                # Resize to fit
-                image.thumbnail((width, height), Image.Resampling.LANCZOS)
-
+                # Disk cache için dosya adı oluştur
+                import hashlib
+                url_hash = hashlib.md5(cache_key.encode()).hexdigest()
+                cache_dir = os.path.join(appdirs.user_cache_dir("TurkAnime-GUI", "KebabLord"), "thumbnails")
+                os.makedirs(cache_dir, exist_ok=True)
+                cache_path = os.path.join(cache_dir, f"{url_hash}.png")
+                
+                image = None
+                
+                # Disk cache kontrolü
+                if os.path.exists(cache_path):
+                    try:
+                        image = Image.open(cache_path)
+                    except:
+                        pass
+                
+                # Disk cache'de yoksa indir
+                if image is None:
+                    response = requests.get(url, timeout=10)
+                    response.raise_for_status()
+                    image = Image.open(io.BytesIO(response.content))
+                    image.thumbnail((width, height), Image.Resampling.LANCZOS)
+                    
+                    # Disk cache'e kaydet
+                    try:
+                        image.save(cache_path, "PNG")
+                    except:
+                        pass
+                
                 # Convert to CTkImage
                 ctk_image = ctk.CTkImage(image, size=(width, height))
 
-                # Cache the image
-                self.anilist_image_cache[url] = ctk_image
+                # Memory cache'e kaydet
+                self.anilist_image_cache[cache_key] = ctk_image
 
-                # Update label in main thread
-                self.after(0, lambda: label.configure(image=ctk_image))
+                # Update label in main thread - widget hala var mı kontrol et
+                def set_image():
+                    try:
+                        if label.winfo_exists():
+                            label.configure(image=ctk_image)
+                    except:
+                        pass
+                self.after(0, set_image)
 
             except Exception as e:
                 print(f"Thumbnail load error: {e}")
-                # Fallback to text (fix: set image=None to avoid string warning)
-                self.after(0, lambda: label.configure(text="[Kapak]", image=None))
+                # Fallback to text - widget hala var mı kontrol et
+                def set_fallback():
+                    try:
+                        if label.winfo_exists():
+                            label.configure(text="[Kapak]", image=None)
+                    except:
+                        pass
+                self.after(0, set_fallback)
 
         threading.Thread(target=load_image, daemon=True).start()
 

@@ -8,6 +8,8 @@ from ..anilist_client import anilist_client
 from ..objects import Anime
 from ..sources.animecix import search_animecix
 from ..sources.anizle import search_anizle
+from ..sources.animely import search_animely
+from ..sources.tranime import search_tranime
 
 
 class AniListAdapter:
@@ -108,6 +110,46 @@ class AnizleAdapter:
             return []
 
 
+class AnimelyAdapter:
+    """Adapter for Animely.net API search."""
+
+    def search_anime(self, query: str, limit: int = 10) -> List[Tuple[str, str]]:
+        """Search anime on Animely.net.
+        
+        Args:
+            query: Search query
+            limit: Maximum number of results
+            
+        Returns:
+            List of (slug, title) tuples
+        """
+        try:
+            results = search_animely(query, limit=limit)
+            return results[:limit]
+        except Exception:
+            return []
+
+
+class TRAnimeAdapter:
+    """Adapter for TRAnimeİzle.io website search."""
+
+    def search_anime(self, query: str, limit: int = 10) -> List[Tuple[str, str]]:
+        """Search anime on TRAnimeİzle.io.
+        
+        Args:
+            query: Search query  
+            limit: Maximum number of results
+            
+        Returns:
+            List of (slug, title) tuples
+        """
+        try:
+            results = search_tranime(query, limit=limit)
+            return results[:limit]
+        except Exception:
+            return []
+
+
 class SearchEngine:
     """Unified search engine for all anime sources."""
     
@@ -116,7 +158,9 @@ class SearchEngine:
             "AniList": AniListAdapter(),
             "TürkAnime": TurkAnimeAdapter(),
             "AnimeciX": AnimeciXAdapter(),
-            "Anizle": AnizleAdapter()
+            "Anizle": AnizleAdapter(),
+            "Animely": AnimelyAdapter(),
+            "TRAnimeİzle": TRAnimeAdapter()
         }
     
     def search_all_sources(self, query: str, limit_per_source: int = 10) -> Dict[str, List[Tuple[str, str]]]:

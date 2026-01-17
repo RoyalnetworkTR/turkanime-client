@@ -381,6 +381,60 @@ class AniListClient:
             return result['data']['Media']
         return None
 
+    def get_anime_by_ids(self, anime_ids: list) -> Dict[int, Dict]:
+        """Get multiple anime details by IDs in a single request."""
+        if not anime_ids:
+            return {}
+        
+        # AniList API'de batch query için Page kullanıyoruz
+        # Maksimum 50 anime çekebiliriz
+        anime_ids = anime_ids[:50]
+        
+        query = """
+        query ($ids: [Int]) {
+            Page(page: 1, perPage: 50) {
+                media(id_in: $ids, type: ANIME) {
+                    id
+                    title {
+                        romaji
+                        english
+                        native
+                    }
+                    coverImage {
+                        large
+                        medium
+                    }
+                    description
+                    episodes
+                    duration
+                    genres
+                    averageScore
+                    popularity
+                    status
+                    season
+                    seasonYear
+                    studios {
+                        nodes {
+                            name
+                        }
+                    }
+                }
+            }
+        }
+        """
+
+        variables = {'ids': anime_ids}
+        result = self._make_request(query, variables)
+
+        anime_map = {}
+        if result and 'data' in result and result['data']['Page']:
+            media_list = result['data']['Page'].get('media', [])
+            for media in media_list:
+                if media and media.get('id'):
+                    anime_map[media['id']] = media
+        
+        return anime_map
+
     # --- token persistence ---
     def _tokens_path(self) -> str:
         try:

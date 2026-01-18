@@ -240,6 +240,11 @@ class ExampleAnimeAdapter:
         "timeout": 10,
     }
 
+    _YEAR_PATTERN = re.compile(r'(\d{4})')
+    _EPISODES_PATTERN = re.compile(r'(\d+)\s*Bölüm')
+    _EPISODE_NUMBER_PATTERN = re.compile(r'(\d+)')
+    _EPISODE_TITLE_PATTERN = re.compile(r'Bölüm\s*(\d+)', re.IGNORECASE)
+
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
@@ -348,11 +353,11 @@ class ExampleAnimeAdapter:
             # Info elementinden detayları parse et
             if info_elem:
                 # Bu kısmı sağlayıcınızın yapısına göre düzenleyin
-                year_match = re.search(r'(\d{4})', info_elem.text)
+                year_match = self._YEAR_PATTERN.search(info_elem.text)
                 if year_match:
                     anime_data["year"] = int(year_match.group(1))
 
-                episodes_match = re.search(r'(\d+)\s*Bölüm', info_elem.text)
+                episodes_match = self._EPISODES_PATTERN.search(info_elem.text)
                 if episodes_match:
                     anime_data["episodes"] = int(episodes_match.group(1))
 
@@ -388,12 +393,12 @@ class ExampleAnimeAdapter:
                     # Bölüm numarasını çıkar
                     episode_number = 1
                     if number_elem:
-                        number_match = re.search(r'(\d+)', number_elem.text)
+                        number_match = self._EPISODE_NUMBER_PATTERN.search(number_elem.text)
                         if number_match:
                             episode_number = int(number_match.group(1))
                     else:
                         # Başlıktan çıkar
-                        number_match = re.search(r'Bölüm\s*(\d+)', title_elem.text, re.IGNORECASE)
+                        number_match = self._EPISODE_TITLE_PATTERN.search(title_elem.text)
                         if number_match:
                             episode_number = int(number_match.group(1))
 

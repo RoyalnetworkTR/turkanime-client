@@ -100,7 +100,7 @@ class VidSearchCLI():
             msg += f'{hook["player"]} {hook["status"]}'
             msg += "!" if hook["status"] == "çalışıyor" else "."
         elif hook.get("status") == "hiçbiri çalışmıyor":
-            pass # TODO: hata mesajı gösterilmeli
+            msg = "[red]Hiçbir kaynak çalışmıyor![/red]"
         if self.progress.tasks:
             task_id = self.progress.tasks[0].id
         else:

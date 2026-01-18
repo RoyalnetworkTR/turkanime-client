@@ -187,9 +187,10 @@ class JikanCache:
     def clear(self):
         """Clear all cache files."""
         try:
-            for f in os.listdir(self.cache_dir):
-                if f.startswith('cache_') and f.endswith('.json'):
-                    os.remove(os.path.join(self.cache_dir, f))
+            with os.scandir(self.cache_dir) as entries:
+                for entry in entries:
+                    if entry.name.startswith('cache_') and entry.name.endswith('.json'):
+                        os.remove(entry.path)
             print("[JikanCache] Cache cleared")
         except Exception as e:
             print(f"[JikanCache] Cache clear error: {e}")

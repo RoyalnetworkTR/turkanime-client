@@ -3626,11 +3626,43 @@ class MainWindow(ctk.CTk):
             try:
                 vf = VideoFindWorker(episode_obj)
                 vf.signals.connect_found(self.play_video)
-                vf.signals.connect_error(lambda msg: self.message(f"Hata: {msg}", error=True))
+                vf.signals.connect_error(self._handle_play_error)
                 vf.run()
             except Exception as e:
                 self.message(f"Video arama hatası: {e}", error=True)
         threading.Thread(target=worker, daemon=True).start()
+
+    def _handle_play_error(self, error_message: str):
+        """Video oynatma hatası için dialog göster."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Video Hatası")
+        dialog.geometry("400x200")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Başlık
+        title_label = ctk.CTkLabel(dialog, text="❌ Video Oynatılamadı",
+                                 font=ctk.CTkFont(size=18, weight="bold"),
+                                 text_color="#ff6b6b")
+        title_label.pack(pady=(20, 10))
+
+        # Hata mesajı
+        error_label = ctk.CTkLabel(dialog, text=error_message,
+                                 wraplength=350,
+                                 font=ctk.CTkFont(size=12))
+        error_label.pack(pady=(0, 20))
+
+        # Kapat butonu
+        close_btn = ctk.CTkButton(dialog, text="Kapat",
+                                command=dialog.destroy,
+                                fg_color="#666666")
+        close_btn.pack(pady=(0, 20))
+
+        # Dialog'u ortala
+        dialog.update_idletasks()
+        x = (self.winfo_screenwidth() - dialog.winfo_width()) // 2
+        y = (self.winfo_screenheight() - dialog.winfo_height()) // 2
+        dialog.geometry(f"+{x}+{y}")
 
     def _download_episode(self, episode_obj):
         def worker():

@@ -29,6 +29,10 @@ except ImportError:
 # YAPILANDIRMA
 # ─────────────────────────────────────────────────────────────────────────────
 BASE_URL = "https://www.tranimeizle.io"
+_SOURCE_PATTERN = re.compile(
+    r'data-id="(\d+)"[^>]*>.*?<p[^>]*class="title"[^>]*>\s*(\S+)',
+    re.DOTALL
+)
 CACHE_DIR = Path.home() / ".turkanime" / "tranime_cache"
 CACHE_DURATION = 30 * 60  # 30 dakika
 HTTP_TIMEOUT = 15
@@ -176,10 +180,7 @@ class TRAnimeEpisode:
             
             # HTML parse
             sources = []
-            items = re.findall(
-                r'data-id="(\d+)"[^>]*>.*?<p[^>]*class="title"[^>]*>\s*(\S+)',
-                resp.text, re.DOTALL
-            )
+            items = _SOURCE_PATTERN.findall(resp.text)
             
             fansub_name = next((f[1] for f in self.fansubs if f[0] == fansub_id), "Unknown")
             

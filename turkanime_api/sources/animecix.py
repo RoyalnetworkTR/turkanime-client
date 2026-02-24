@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Tuple
 import json
 import re
+import concurrent.futures
 from urllib.parse import urlparse, parse_qs, quote, urlsplit, urlunsplit
 
 import urllib.request
@@ -81,6 +82,16 @@ def search_animecix(query: str, timeout: int = 8) -> List[Tuple[str, str]]:
     return results
 
 
+def _extract_seasons_range(data: Dict[str, Any]) -> List[int]:
+    """API yanıtından sezon sayısını çıkarır ve range döndürür."""
+    videos = data.get("videos") or []
+    if not videos:
+        return []
+    title = (videos[0] or {}).get("title") or {}
+    seasons = title.get("seasons") or []
+    return list(range(len(seasons)))
+
+
 def _seasons_for_title(title_id: int) -> List[int]:
     # title_id'yi güvenli şekilde int'e çevir
     try:
@@ -90,12 +101,7 @@ def _seasons_for_title(title_id: int) -> List[int]:
     
     url = f"{ALT_URL}secure/related-videos?episode=1&season=1&titleId={safe_id}&videoId=637113"
     data = json.loads(_http_get(url))
-    videos = data.get("videos") or []
-    if not videos:
-        return []
-    title = (videos[0] or {}).get("title") or {}
-    seasons = title.get("seasons") or []
-    return list(range(len(seasons)))
+    return _extract_seasons_range(data)
 
 
 def _episodes_for_title(title_id: int) -> List[Dict[str, Any]]:
@@ -104,15 +110,40 @@ def _episodes_for_title(title_id: int) -> List[Dict[str, Any]]:
         safe_id = int(title_id)
     except (ValueError, TypeError):
         safe_id = hash(str(title_id)) % 1000000 if title_id else 0
+
+    # İlk isteği yap ve sezon sayısını al
+    first_url = (
+        f"{ALT_URL}secure/related-videos?"
+        f"episode=1&season=1&titleId={safe_id}&videoId=637113"
+    )
+    first_data = json.loads(_http_get(first_url))
     
+    # Sezon listesini mevcut soyutlamayı kullanarak al
+    seasons = _extract_seasons_range(first_data)
+    num_seasons = len(seasons)
+    if num_seasons == 0:
+        return []
+
+    results_map = {0: first_data}
+
+    if num_seasons > 1:
+        def fetch_season(sidx):
+            url = (
+                f"{ALT_URL}secure/related-videos?"
+                f"episode=1&season={sidx+1}&titleId={safe_id}&videoId=637113"
+            )
+            return sidx, json.loads(_http_get(url))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_sidx = {executor.submit(fetch_season, i): i for i in range(1, num_seasons)}
+            for future in concurrent.futures.as_completed(future_to_sidx):
+                sidx, data = future.result()
+                results_map[sidx] = data
+
     episodes: List[Dict[str, Any]] = []
     seen = set()
-    for sidx in _seasons_for_title(safe_id):
-        url = (
-            f"{ALT_URL}secure/related-videos?"
-            f"episode=1&season={sidx+1}&titleId={safe_id}&videoId=637113"
-        )
-        data = json.loads(_http_get(url))
+    for sidx in range(num_seasons):
+        data = results_map.get(sidx, {})
         for v in data.get("videos", []):
             name = v.get("name")
             ep_url = v.get("url")

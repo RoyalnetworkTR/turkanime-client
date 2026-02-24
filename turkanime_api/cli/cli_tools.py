@@ -66,15 +66,11 @@ class DownloadCLI():
         if hook["status"] == "error":
             # aria2c fallback veya hata mesajını bir kerelik yaz
             msg = hook.get("message")
-            if msg:
-                try:
-                    from rich import print as rprint
-                    rprint(f"[red]Hata:[/red] {msg}")
-                except Exception:
-                    pass
             if self.progress.tasks:
-                # TODO: hata mesajı gösterilmeli
-                self.progress.tasks.pop(0)
+                task_id = self.progress.tasks[0].id
+                err_desc = f"[red]Hata: {msg}[/red]" if msg else "[red]Hata oluştu![/red]"
+                self.progress.update(task_id, description=err_desc)
+                self.progress.stop_task(task_id)
     def dl_callback(self,hook):
         """ gereksinimler.dosya_indir için callback handler. """
         if not self.multi_tasks or hook.get("file") not in self.multi_tasks:

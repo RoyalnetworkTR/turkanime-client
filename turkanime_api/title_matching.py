@@ -49,6 +49,7 @@ class TitleMatchingClient:
         
         # Local cache for offline access
         self._cache: Dict[str, List[AnimeMatch]] = {}
+        self._search_index: List[tuple] = []
         self._load_cache()
     
     def _get_cache_path(self) -> str:
@@ -68,7 +69,25 @@ class TitleMatchingClient:
         except Exception as e:
             print(f"[TitleMatching] Cache yükleme hatası: {e}")
             self._cache = {}
+
+        # Build search index after loading
+        self._build_index()
     
+    def _build_index(self):
+        """Build search index from cache for faster lookups."""
+        self._search_index = []
+        if 'all' in self._cache:
+            try:
+                # Store tuples of (lowercase_title, AnimeMatch_object)
+                # This avoids repeated .lower() calls and object instantiation during search
+                self._search_index = [
+                    (item.get('anime_title', '').lower(), AnimeMatch(**item))
+                    for item in self._cache['all']
+                ]
+            except Exception as e:
+                print(f"[TitleMatching] Index oluşturma hatası: {e}")
+                self._search_index = []
+
     def _save_cache(self):
         """Save cache to disk."""
         try:
@@ -105,6 +124,7 @@ class TitleMatchingClient:
             # Update cache
             self._cache['all'] = [self._match_to_dict(m) for m in matches]
             self._save_cache()
+            self._build_index()  # Rebuild index after update
             return matches
         
         # Return from cache if API fails
@@ -134,11 +154,14 @@ class TitleMatchingClient:
         query_lower = query.lower()
         matches = []
         
-        if 'all' in self._cache:
-            for item in self._cache['all']:
-                title = item.get('anime_title', '').lower()
-                if query_lower in title:
-                    matches.append(AnimeMatch(**item))
+        # If index is empty but cache has items, try to rebuild index
+        if not self._search_index and 'all' in self._cache and self._cache['all']:
+             self._build_index()
+
+        # Use the optimized index
+        for title_lower, match_obj in self._search_index:
+            if query_lower in title_lower:
+                matches.append(match_obj)
         
         return matches
     
@@ -192,6 +215,7 @@ class TitleMatchingClient:
         """Invalidate cache to force refresh on next request."""
         if 'all' in self._cache:
             del self._cache['all']
+        self._search_index = []
         self._save_cache()
     
     def _match_to_dict(self, match: AnimeMatch) -> Dict:

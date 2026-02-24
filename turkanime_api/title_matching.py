@@ -287,6 +287,8 @@ class UserTrackingClient:
         
         # Local cache
         self._episode_status: Dict[str, Dict] = {}
+        # Cache for get_watch_progress to avoid O(N) loop
+        self._watch_progress_cache: Dict[str, Dict] = {}
         self._load_local_status()
     
     def _get_status_path(self) -> str:
@@ -297,6 +299,7 @@ class UserTrackingClient:
     
     def _load_local_status(self):
         """Load status from local file."""
+        self._watch_progress_cache = {}
         try:
             status_path = self._get_status_path()
             if os.path.exists(status_path):
@@ -340,6 +343,7 @@ class UserTrackingClient:
         
         if result:
             self._episode_status = result
+            self._watch_progress_cache = {}  # Invalidate all cache
             self._save_local_status()
         
         return self._episode_status
@@ -364,6 +368,17 @@ class UserTrackingClient:
         
         # Update local cache
         self._episode_status[episode_id] = current
+
+        # Invalidate relevant progress cache
+        # If any anime_id in cache is part of this episode_id, invalidate it
+        keys_to_remove = []
+        for anime_id in self._watch_progress_cache:
+            if anime_id in episode_id:
+                keys_to_remove.append(anime_id)
+
+        for k in keys_to_remove:
+            del self._watch_progress_cache[k]
+
         self._save_local_status()
         
         # Sync to API
@@ -384,6 +399,9 @@ class UserTrackingClient:
         Returns:
             Dict with 'watched_count', 'total_episodes', 'last_watched'
         """
+        if anime_id in self._watch_progress_cache:
+            return self._watch_progress_cache[anime_id]
+
         watched = 0
         last_watched = None
         
@@ -394,10 +412,12 @@ class UserTrackingClient:
                 if updated and (last_watched is None or updated > last_watched):
                     last_watched = updated
         
-        return {
+        result = {
             'watched_count': watched,
             'last_watched': last_watched
         }
+        self._watch_progress_cache[anime_id] = result
+        return result
 
 
 # Global client instances

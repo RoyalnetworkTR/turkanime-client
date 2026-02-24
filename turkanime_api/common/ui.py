@@ -9,6 +9,25 @@ import threading
 import re
 from .adapters import AniListAdapter, TurkAnimeAdapter, AnimeciXAdapter, AnizleAdapter, AnimelyAdapter
 
+# Regex patterns for episode info extraction (pre-compiled for performance)
+_SXX_EXX_PATTERN = re.compile(r'[Ss](\d+)[Ee](\d+)')
+_XX_X_XX_PATTERN = re.compile(r'(\d+)[xX](\d+)')
+_SEASON_X_BÖLÜM_Y_PATTERN = re.compile(r'[Ss]ezon\s*(\d+).*?[Bb][öoÖO]l[üuÜU]m\s*(\d+)')
+_X_SEZON_Y_BÖLÜM_PATTERN = re.compile(r'(\d+)\s*\.\s*[Ss]ezon.*?(\d+)\s*\.\s*[Bb][öoÖO]l[üuÜU]m')
+_X_BÖLÜM_PATTERN = re.compile(r'(\d+)\s*\.\s*[Bb][öoÖO]l[üuÜU]m')
+_BÖLÜM_X_PATTERN = re.compile(r'[Bb][öoÖO]l[üuÜU]m\s*[:\-]?\s*(\d+)')
+_EPISODE_X_PATTERN = re.compile(r'[Ee]pisode\s*[:\-]?\s*(\d+)')
+_EP_SHORT_X_PATTERN = re.compile(r'[Ee][Pp]\s*[:\-]?\s*(\d+)')
+_ONLY_DIGITS_PATTERN = re.compile(r'^(\d+)$')
+_FIRST_DIGIT_PATTERN = re.compile(r'(\d+)')
+
+# Regex patterns for episode title normalization
+_NORM_X_BÖLÜM_START = re.compile(r'^\d+\s*\.\s*[Bb][öÖ]l[üÜ]m')
+_NORM_BÖLÜM_X_START = re.compile(r'^[Bb][öÖ]l[üÜ]m\s*\d+')
+_NORM_EPISODE_X_START = re.compile(r'^[Ee]pisode\s*\d+', re.IGNORECASE)
+_NORM_SXXEXX_START = re.compile(r'^[Ss]\d+[Ee]\d+')
+_NORM_EXTRACT_BÖLÜM = re.compile(r'(\d+\s*\.\s*[Bb][öÖ]l[üÜ]m.*?)$')
+
 
 def extract_episode_info(title: str) -> tuple[int, int]:
     """Bölüm başlığından sezon ve bölüm numarasını çıkar.
@@ -37,50 +56,50 @@ def extract_episode_info(title: str) -> tuple[int, int]:
     title = title.strip()
     
     # S01E05 formatı (sezon ve bölüm)
-    match = re.search(r'[Ss](\d+)[Ee](\d+)', title)
+    match = _SXX_EXX_PATTERN.search(title)
     if match:
         return (int(match.group(1)), int(match.group(2)))
     
     # 1x05 formatı
-    match = re.search(r'(\d+)[xX](\d+)', title)
+    match = _XX_X_XX_PATTERN.search(title)
     if match:
         return (int(match.group(1)), int(match.group(2)))
     
     # "Sezon X Bölüm Y" veya "X. Sezon Y. Bölüm" formatı
-    match = re.search(r'[Ss]ezon\s*(\d+).*?[Bb][öoÖO]l[üuÜU]m\s*(\d+)', title)
+    match = _SEASON_X_BÖLÜM_Y_PATTERN.search(title)
     if match:
         return (int(match.group(1)), int(match.group(2)))
     
-    match = re.search(r'(\d+)\s*\.\s*[Ss]ezon.*?(\d+)\s*\.\s*[Bb][öoÖO]l[üuÜU]m', title)
+    match = _X_SEZON_Y_BÖLÜM_PATTERN.search(title)
     if match:
         return (int(match.group(1)), int(match.group(2)))
     
     # "X. Bölüm" formatı (en yaygın Türkçe format) - sezon 1 varsayılan
-    match = re.search(r'(\d+)\s*\.\s*[Bb][öoÖO]l[üuÜU]m', title)
+    match = _X_BÖLÜM_PATTERN.search(title)
     if match:
         return (1, int(match.group(1)))
     
     # "Bölüm X" formatı
-    match = re.search(r'[Bb][öoÖO]l[üuÜU]m\s*[:\-]?\s*(\d+)', title)
+    match = _BÖLÜM_X_PATTERN.search(title)
     if match:
         return (1, int(match.group(1)))
     
     # "Episode X" veya "EP X" formatı
-    match = re.search(r'[Ee]pisode\s*[:\-]?\s*(\d+)', title)
+    match = _EPISODE_X_PATTERN.search(title)
     if match:
         return (1, int(match.group(1)))
     
-    match = re.search(r'[Ee][Pp]\s*[:\-]?\s*(\d+)', title)
+    match = _EP_SHORT_X_PATTERN.search(title)
     if match:
         return (1, int(match.group(1)))
     
     # Sadece sayı (örn: "01", "1", "001")
-    match = re.search(r'^(\d+)$', title)
+    match = _ONLY_DIGITS_PATTERN.search(title)
     if match:
         return (1, int(match.group(1)))
     
     # Son çare: title'daki ilk sayıyı al
-    match = re.search(r'(\d+)', title)
+    match = _FIRST_DIGIT_PATTERN.search(title)
     if match:
         return (1, int(match.group(1)))
     
@@ -121,20 +140,21 @@ def normalize_episode_title(title: str, episode_num: int, season_num: int = 1) -
         return f"S{season_num:02d}E{episode_num:02d}"
     
     # Zaten normalize edilmişse (sadece bölüm bilgisi varsa)
-    if re.match(r'^\d+\s*\.\s*[Bb][öÖ]l[üÜ]m', title.strip()):
-        return title.strip()
+    title_stripped = title.strip()
+    if _NORM_X_BÖLÜM_START.match(title_stripped):
+        return title_stripped
     
-    if re.match(r'^[Bb][öÖ]l[üÜ]m\s*\d+', title.strip()):
-        return title.strip()
+    if _NORM_BÖLÜM_X_START.match(title_stripped):
+        return title_stripped
     
-    if re.match(r'^[Ee]pisode\s*\d+', title.strip(), re.IGNORECASE):
-        return title.strip()
+    if _NORM_EPISODE_X_START.match(title_stripped):
+        return title_stripped
     
-    if re.match(r'^[Ss]\d+[Ee]\d+', title.strip()):
-        return title.strip()
+    if _NORM_SXXEXX_START.match(title_stripped):
+        return title_stripped
     
     # "Anime İsmi X. Bölüm" formatından "X. Bölüm"ü çıkar
-    match = re.search(r'(\d+\s*\.\s*[Bb][öÖ]l[üÜ]m.*?)$', title)
+    match = _NORM_EXTRACT_BÖLÜM.search(title)
     if match:
         return match.group(1).strip()
     

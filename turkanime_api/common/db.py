@@ -24,6 +24,11 @@ class APIManager:
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
 
+        # Cache initialization
+        self._matches_cache = None
+        self._matches_cache_time = 0
+        self._matches_cache_limit = 0
+
     def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Optional[Dict]:
         """API isteği yapar."""
         try:
@@ -78,8 +83,17 @@ class APIManager:
 
     def get_anime_matches(self, limit: int = 100) -> List[Dict]:
         """Anime eşleştirmelerini API'den getirir."""
+        # Cache check (5 minutes TTL)
+        if (self._matches_cache is not None
+            and (time.time() - self._matches_cache_time < 300)
+            and self._matches_cache_limit >= limit):
+            return self._matches_cache[:limit]
+
         result = self._make_request('GET', f'/anime-matches?limit={limit}')
-        if result and isinstance(result, list):
+        if result is not None and isinstance(result, list):
+            self._matches_cache = result
+            self._matches_cache_time = time.time()
+            self._matches_cache_limit = limit
             return result
         return []
 

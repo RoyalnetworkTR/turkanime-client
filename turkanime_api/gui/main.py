@@ -2952,11 +2952,11 @@ class MainWindow(ctk.CTk):
         english = anime_data.get('title', {}).get('english') or ""
         query_title = romaji if romaji else english
 
-        # DB'den önceki eşleşmeleri kontrol et
-        db_matches = self._load_anime_matches_from_db(query_title)
-
         def load_sources_worker():
             """Kaynakları yükle - SearchEngine ile ve timeout atlama ile."""
+            # DB'den önceki eşleşmeleri kontrol et (background thread'de)
+            db_matches = self._load_anime_matches_from_db(query_title)
+
             with open("debug.log", "a") as f:
                 f.write("DEBUG: load_sources_worker başladı\n")
             try:

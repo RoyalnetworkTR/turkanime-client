@@ -198,30 +198,40 @@ def search_anime(query: str) -> List[AnimelyAnime]:
     
     results = []
     
+    words = query_lower.split()
+    # Micro-optimization: Local variable lookup is faster
+    to_lower = str.lower
+
     # 1. Tam eşleşme
     for anime in animes:
-        name = anime.get("NAME", "").lower()
-        other_names = [n.lower() for n in anime.get("OTHER_NAMES", [])]
-        
-        if name == query_lower or query_lower in other_names:
+        name = to_lower(anime.get("NAME", ""))
+        if name == query_lower:
+            results.append(anime)
+            continue
+
+        if query_lower in map(to_lower, anime.get("OTHER_NAMES", [])):
             results.append(anime)
     
     # 2. Kısmi eşleşme
     if not results:
         for anime in animes:
-            name = anime.get("NAME", "").lower()
-            other_names = [n.lower() for n in anime.get("OTHER_NAMES", [])]
+            name = to_lower(anime.get("NAME", ""))
+            if query_lower in name:
+                results.append(anime)
+                continue
             
-            if query_lower in name or any(query_lower in n for n in other_names):
+            if any(query_lower in n for n in map(to_lower, anime.get("OTHER_NAMES", []))):
                 results.append(anime)
     
     # 3. Kelime bazlı eşleşme
     if not results:
-        words = query_lower.split()
         for anime in animes:
-            all_names = [anime.get("NAME", "").lower()] + [n.lower() for n in anime.get("OTHER_NAMES", [])]
+            name = to_lower(anime.get("NAME", ""))
+            if all(word in name for word in words):
+                results.append(anime)
+                continue
             
-            if any(all(word in name for word in words) for name in all_names):
+            if any(all(word in n for word in words) for n in map(to_lower, anime.get("OTHER_NAMES", []))):
                 results.append(anime)
     
     # AnimelyAnime objelerine dönüştür

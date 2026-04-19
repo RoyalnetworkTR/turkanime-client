@@ -5,6 +5,7 @@ from time import sleep
 from threading import Thread
 from prompt_toolkit import styles
 
+from rich import print as rprint
 from rich.panel import Panel
 from rich.console import Group
 from rich.progress import (
@@ -67,14 +68,10 @@ class DownloadCLI():
             # aria2c fallback veya hata mesajını bir kerelik yaz
             msg = hook.get("message")
             if msg:
-                try:
-                    from rich import print as rprint
-                    rprint(f"[red]Hata:[/red] {msg}")
-                except Exception:
-                    pass
+                rprint(f"[red]Hata:[/red] {msg}")
             if self.progress.tasks:
-                # TODO: hata mesajı gösterilmeli
-                self.progress.tasks.pop(0)
+                task_id = self.progress.tasks[0].id
+                self.progress.update(task_id, description=f"[red]Hata: {msg or 'Bilinmeyen hata'}[/red]")
     def dl_callback(self,hook):
         """ gereksinimler.dosya_indir için callback handler. """
         if not self.multi_tasks or hook.get("file") not in self.multi_tasks:
@@ -100,7 +97,7 @@ class VidSearchCLI():
             msg += f'{hook["player"]} {hook["status"]}'
             msg += "!" if hook["status"] == "çalışıyor" else "."
         elif hook.get("status") == "hiçbiri çalışmıyor":
-            pass # TODO: hata mesajı gösterilmeli
+            msg = "[red]Hiçbir video çalışmıyor![/red]"
         if self.progress.tasks:
             task_id = self.progress.tasks[0].id
         else:
@@ -123,7 +120,7 @@ def indirme_task_cli(bolum,table,dosya):
         by_res=dosya.ayarlar["max resolution"],
         callback=vid_cli.callback)
     if not best_video:
-        # TODO: hata mesajı gösterilmeli
+        rprint(f"[red]Hata:[/red] {bolum.slug} için uygun video bulunamadı.")
         return
     down_dir = dosya.ayarlar["indirilenler"]
     success = False

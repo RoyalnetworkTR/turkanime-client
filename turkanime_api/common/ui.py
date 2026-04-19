@@ -186,6 +186,10 @@ class AccordionSourceEpisodeList:
         if self.user_id:
             self._load_user_episode_status()
 
+        # Caches
+        self._filtered_cache = None
+        self._displayed_keys_cache = None
+
         # Adapter'lar
         self.adapters = {
             "AniList": AniListAdapter(),
@@ -360,10 +364,14 @@ class AccordionSourceEpisodeList:
 
     def _get_filtered_episodes(self) -> List[Dict[str, Any]]:
         """Arama filtresine göre bölümleri döndür."""
+        if self._filtered_cache is not None:
+            return self._filtered_cache
+
         query = self.search_var.get().strip().lower()
         
         if not query:
-            return self.merged_episodes
+            self._filtered_cache = self.merged_episodes
+            return self._filtered_cache
         
         filtered = []
         for ep in self.merged_episodes:
@@ -378,10 +386,15 @@ class AccordionSourceEpisodeList:
             elif query in ep_title or query in str(ep_num):
                 filtered.append(ep)
         
+        self._filtered_cache = filtered
         return filtered
 
     def _refresh_episode_list(self):
         """Bölüm listesini yenile (arama sonuçları için)."""
+        # Invalidate caches
+        self._filtered_cache = None
+        self._displayed_keys_cache = None
+
         # Mevcut widget'ları temizle
         for widget in self.episodes_frame.winfo_children():
             widget.destroy()
@@ -584,7 +597,10 @@ class AccordionSourceEpisodeList:
         self.selected_count_label.configure(text=f"{count} seçili")
         
         # Tümünü Seç butonunu güncelle (filtrelenmiş listeye göre)
-        displayed_keys = {f"{ep['number']}_{ep['title']}" for ep in filtered}
+        if self._displayed_keys_cache is None:
+            self._displayed_keys_cache = {f"{ep['number']}_{ep['title']}" for ep in filtered}
+
+        displayed_keys = self._displayed_keys_cache
         selected_in_view = self.selected_episodes & displayed_keys
         all_selected = len(selected_in_view) == len(filtered) and len(filtered) > 0
         

@@ -5,6 +5,7 @@ from time import sleep
 from threading import Thread
 from prompt_toolkit import styles
 
+from rich import print as rprint
 from rich.panel import Panel
 from rich.console import Group
 from rich.progress import (
@@ -67,14 +68,10 @@ class DownloadCLI():
             # aria2c fallback veya hata mesajını bir kerelik yaz
             msg = hook.get("message")
             if msg:
-                try:
-                    from rich import print as rprint
-                    rprint(f"[red]Hata:[/red] {msg}")
-                except Exception:
-                    pass
+                rprint(f"[red]Hata:[/red] {msg}")
             if self.progress.tasks:
                 task_id = self.progress.tasks[0].id
-                self.progress.update(task_id, description="[red]Hata![/red]")
+                self.progress.update(task_id, description=f"[red]Hata: {msg or 'Bilinmeyen hata'}[/red]")
     def dl_callback(self,hook):
         """ gereksinimler.dosya_indir için callback handler. """
         if not self.multi_tasks or hook.get("file") not in self.multi_tasks:
@@ -123,7 +120,8 @@ def indirme_task_cli(bolum,table,dosya):
         by_res=dosya.ayarlar["max resolution"],
         callback=vid_cli.callback)
     if not best_video:
-        dl_cli.progress.add_task("[red]Hata: Video bulunamadı![/red]", total=None)
+        rprint(f"[red]Hata:[/red] {bolum.slug} için uygun video bulunamadı.")
+        dl_cli.progress.add_task(f"[red]Hata: {bolum.slug} için uygun video bulunamadı.[/red]", total=None)
         return
     down_dir = dosya.ayarlar["indirilenler"]
     success = False

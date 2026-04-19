@@ -73,8 +73,8 @@ class DownloadCLI():
                 except Exception:
                     pass
             if self.progress.tasks:
-                # TODO: hata mesajı gösterilmeli
-                self.progress.tasks.pop(0)
+                task_id = self.progress.tasks[0].id
+                self.progress.update(task_id, description="[red]Hata![/red]")
     def dl_callback(self,hook):
         """ gereksinimler.dosya_indir için callback handler. """
         if not self.multi_tasks or hook.get("file") not in self.multi_tasks:
@@ -100,7 +100,7 @@ class VidSearchCLI():
             msg += f'{hook["player"]} {hook["status"]}'
             msg += "!" if hook["status"] == "çalışıyor" else "."
         elif hook.get("status") == "hiçbiri çalışmıyor":
-            pass # TODO: hata mesajı gösterilmeli
+            msg = "[red]Hiçbir video çalışmıyor![/red]"
         if self.progress.tasks:
             task_id = self.progress.tasks[0].id
         else:
@@ -123,7 +123,7 @@ def indirme_task_cli(bolum,table,dosya):
         by_res=dosya.ayarlar["max resolution"],
         callback=vid_cli.callback)
     if not best_video:
-        # TODO: hata mesajı gösterilmeli
+        dl_cli.progress.add_task("[red]Hata: Video bulunamadı![/red]", total=None)
         return
     down_dir = dosya.ayarlar["indirilenler"]
     success = False

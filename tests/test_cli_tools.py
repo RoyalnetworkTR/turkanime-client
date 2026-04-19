@@ -129,7 +129,7 @@ def test_callback_none_working():
     task = cli.progress.tasks[0]
     print(f"DEBUG: final description='{task.description}', completed={task.completed}, total={task.total}")
     # Should show error message for "hiçbiri çalışmıyor"
-    expected = "[red]Hiçbiri çalışmıyor![/red]"
+    expected = "[red]Hiçbir video çalışmıyor![/red]"
     if task.description != expected:
         print(f"FAIL: Expected '{expected}', got '{task.description}'")
         sys.exit(1)

@@ -20,6 +20,10 @@ from .common.utils import get_ydl_opts, get_video_resolution_mpv, extract_video_
 from .bypass import get_real_url, unmask_real_url, fetch, get_alucard_m3u8
 from .common.utils import get_platform, get_arch
 
+_TAG_RE = re.compile("<.*?>")
+_LEAD_SPACE_RE = re.compile("^ {1,3}")
+_SCORE_RE = re.compile("^(.*?) ")
+
 # Çalıştığı bilinen playerlar ve öncelikleri
 SUPPORTED = [
     "YADISK",
@@ -103,10 +107,10 @@ class Anime:
         for key,val in raw_m:
             if not key in self.info:
                 continue
-            val = re.sub("<.*?>","",val)
-            val = re.sub("^ {1,3}","",val)
+            val = _TAG_RE.sub("",val)
+            val = _LEAD_SPACE_RE.sub("",val)
             if key == "Puanı":
-                val = float(re.findall("^(.*?) ",val).pop())
+                val = float(_SCORE_RE.findall(val).pop())
             elif key == "Anime Türü":
                 val = val.split("  ")
             self.info[key] = val

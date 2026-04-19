@@ -121,6 +121,7 @@ def indirme_task_cli(bolum,table,dosya):
         callback=vid_cli.callback)
     if not best_video:
         rprint(f"[red]Hata:[/red] {bolum.slug} için uygun video bulunamadı.")
+        dl_cli.progress.add_task(f"[red]Hata: {bolum.slug} için uygun video bulunamadı.[/red]", total=None)
         return
     down_dir = dosya.ayarlar["indirilenler"]
     success = False

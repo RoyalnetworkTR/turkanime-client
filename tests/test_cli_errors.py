@@ -1,5 +1,5 @@
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Mock necessary modules that might be missing in the environment
 sys.modules['yt_dlp'] = MagicMock()
@@ -42,15 +42,11 @@ class TestCLIErrors(unittest.TestCase):
         dosya = MagicMock()
         dosya.ayarlar = {"max resolution": 1080}
 
-        # Access the mock rprint from sys.modules
-        import rich
-        mock_rprint = rich.print
-
-        indirme_task_cli(bolum, table, dosya)
-
-        # Verify rprint was called with the expected error message
-        expected_msg = "[red]Hata:[/red] test-bolum-1 için uygun video bulunamadı."
-        mock_rprint.assert_any_call(expected_msg)
+        with patch('turkanime_api.cli.cli_tools.rprint') as mock_rprint:
+            indirme_task_cli(bolum, table, dosya)
+            # Verify rprint was called with the expected error message
+            expected_msg = "[red]Hata:[/red] test-bolum-1 için uygun video bulunamadı."
+            mock_rprint.assert_any_call(expected_msg)
 
     def test_vid_search_cli_callback_error(self):
         from turkanime_api.cli.cli_tools import VidSearchCLI
@@ -79,13 +75,10 @@ class TestCLIErrors(unittest.TestCase):
 
         hook = {"status": "error", "message": "Connection timeout"}
 
-        import rich
-        mock_rprint = rich.print
-
-        dl_cli.ytdl_callback(hook)
-
-        # Verify rprint was called
-        mock_rprint.assert_called_with("[red]Hata:[/red] Connection timeout")
+        with patch('turkanime_api.cli.cli_tools.rprint') as mock_rprint:
+            dl_cli.ytdl_callback(hook)
+            # Verify rprint was called
+            mock_rprint.assert_called_with("[red]Hata:[/red] Connection timeout")
 
         # Verify progress bar update
         dl_cli.progress.update.assert_called_with(99, description="[red]Hata: Connection timeout[/red]")
